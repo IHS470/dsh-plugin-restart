@@ -1,0 +1,43 @@
+name: release
+
+# Tag a release to publish it:  git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the GitHub release
+  id-token: write   # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm test
+
+      # Publishing to npm needs an NPM_TOKEN secret. Without one the tag still produces a GitHub
+      # release, so a first tag never fails on a step that was never configured.
+      - name: Check for an npm token
+        id: npm
+        run: |
+          configured=${{ secrets.NPM_TOKEN != '' }}
+          echo "configured=$configured" >> "$GITHUB_OUTPUT"
+          if [ "$configured" != "true" ]; then
+            echo "::warning title=No NPM_TOKEN::Skipping the npm publish; the GitHub release is still created."
+          fi
+
+      - name: Publish to npm
+        if: steps.npm.outputs.configured == 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

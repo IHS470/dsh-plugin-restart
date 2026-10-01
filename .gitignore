@@ -1,0 +1,17 @@
+# Logs, editor droppings and the usual Node noise.
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+*.tgz
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local scratch
+tmp/
+*.local.*
