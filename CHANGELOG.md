@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-10-02
+
+Everything this plugin was asked for, in one version: the restart lives in Settings, the window is what
+proves it worked, and **the application** — not a page, not a window — is what gets closed.
+
+### Fixed
+
+- **The Settings section could never appear.** `client.js` was a module-loader factory that took no
+  `require`, so `require('react')` threw, React stayed undefined, and the guard meant to keep a missing
+  React from breaking the caption button swallowed the registration with it. The factory now receives the
+  loader's `require`, and a test asserts the section really is registered (`settings.section`, id
+  `dsh-restart`, order 64) — the assertion 0.5.0 shipped without.
+- **Our own scripts ran as the application.** The helper and the guardian were started with
+  `process.execPath` — the app's own executable, because the host is Electron running as Node — so a
+  process list showed "DeepSeek Harness" while a restart was in flight, and "did the app really close?"
+  honestly answered no. They now run under the Node the install ships (`scriptRuntime()`, falling back to
+  the old behaviour), so the only processes carrying the application's name are application instances.
+- **The window check was four seconds late.** A fresh shell can take seconds to show its window; the check
+  — and the raise that makes the shell show and focus it — now happens 1.5 s after the app answers, and the
+  moment the window was first seen is recorded as `windowVisibleMs`, so "how long did this restart really
+  take" has an answer in the log instead of being an impression.
+
+### What this version does, in one place
+
+- Closes the **whole generation** — shell, host, renderers, helper processes — and proves it:
+  `quit.leftovers`, with the strays identified by **creation time**, never by pid.
+- Comes back by itself even if the helper dies (the guardian), and proves the window is there:
+  `window: visible | raised | hidden` plus `windowVisibleMs`.
+- Never shows the crash dialog (the shell is closed before the host exits), never leaves the app closed,
+  never leaves a stray process behind.
+- A **Settings** section: quit mode (**graceful by default**: the host exits cleanly first, then the shell,
+  then the whole generation gets ten seconds to leave on its own, recording `escalated: true` when it has
+  to force), **three button positions** (right / left / Settings only) with a pixel offset, the window
+  check, the settle time, and **Restart now**.
+- Fast where it is ours to be fast: a click starts the app in about **0.15 s**; the app's own boot is the
+  floor, and the log says which of the two you are waiting for.
+- Rapid clicks are answered with a countdown (`settling`) instead of killing an app that is still starting.
+
+[0.6.0]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.6.0
+
 ## [0.5.0] - 2026-10-02
 
 The restart is a feature in Settings now, with options you can change — and it closes the application the

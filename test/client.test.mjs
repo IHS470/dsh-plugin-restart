@@ -52,7 +52,14 @@ function makeElement(type) {
 }
 
 /** Load the browser half once, with its own module state. */
-function boot(fetchImpl, { overlayVisible = true } = {}) {
+    /** Just enough React for a section to register: the component itself is never rendered here. */
+    const REACT_SHIM = {
+      createElement: (type, props, ...children) => ({ type, props, children }),
+      useState: (initial) => [initial, () => {}],
+      useEffect: () => {},
+    }
+
+function boot(fetchImpl, { overlayVisible = true, slots } = {}) {
   let captured = null
   const windowStub = {
     innerWidth: 1280,
@@ -62,7 +69,10 @@ function boot(fetchImpl, { overlayVisible = true } = {}) {
     removeEventListener() {},
     __ModuleLoader__: {
       load({ id, factory }) {
-        captured = { id, module: factory((name) => { throw new Error(`unexpected require(${name})`) }) }
+        captured = { id, module: factory((name) => {
+            if (name === 'react') return REACT_SHIM
+            throw new Error(`unexpected require(${name})`)
+          }) }
       },
     },
   }
@@ -96,7 +106,10 @@ function boot(fetchImpl, { overlayVisible = true } = {}) {
   assert.equal(captured.id, 'dsh-plugin-restart')
 
   const disposers = []
-  captured.module.apply({ effect: (fn) => { disposers.push(fn()) } })
+  captured.module.apply({
+      effect: (fn) => { disposers.push(fn()) },
+      ...(slots === undefined ? {} : { slots }),
+    })
   return { module: captured.module, body, head, overlay, rootStyle, windowStub, disposers, document: documentStub }
 }
 
@@ -117,7 +130,9 @@ const serveState = async (url, init) => {
 
 const a = boot(serveState)
 assert.equal(typeof a.module.apply, 'function', 'client half exports apply')
-assert.deepEqual(a.module.inject, [], 'nothing is injected: the button is chrome, not a slot entry')
+// The Settings section is a slot entry, so the slot service has to be declared: without it ctx.slots is
+    // undefined and the registration is skipped — which is exactly how 0.5.0 shipped with no Settings section.
+    assert.deepEqual(a.module.inject, ['slots'], 'the slot service is declared for the Settings section')
 assert.ok(chromeButton(a), 'the restart button mounts into the window chrome')
 assert.ok(popover(a), 'and brings its confirm popover')
 assert.equal(popover(a).hidden, true, 'the popover starts closed')
@@ -138,6 +153,23 @@ await flush()
 assert.equal(popover(a).hidden, true, 'cancel closes it')
 assert.equal(requests.filter((entry) => entry.method === 'POST').length, 0, 'and nothing was asked of the Host')
 console.log('A cancel: popover closed with no restart request')
+
+    // --- case A2: the Settings section is really registered ----------------------
+    //
+    // 0.5.0 shipped with the section silently missing: the guard that keeps a missing React from breaking the
+    // caption button also swallowed a missing slot service, and nothing asserted the registration. This does.
+
+    const registrations = []
+    const slotsStub = {
+      inject: (name, factory) => { factory() },
+      register: (options, component) => { registrations.push({ options, component }); return () => {} },
+    }
+    boot(serveState, { slots: slotsStub })
+    assert.equal(registrations.length, 1, 'the Settings section is registered when the slot service is available')
+    assert.equal(registrations[0].options.name, 'settings.section', 'into the Settings page')
+    assert.equal(registrations[0].options.id, 'dsh-restart', 'under its own id')
+    assert.equal(typeof registrations[0].component, 'function', 'with a component to render')
+    console.log('A2 settings section registered as', registrations[0].options.id, '| order', registrations[0].options.order)
 
 // --- case B: a Host that has no desktop shell -------------------------------
 

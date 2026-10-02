@@ -15,7 +15,7 @@
 
 window.__ModuleLoader__.load({
   id: 'dsh-plugin-restart',
-  factory: () => {
+  factory: (require) => {
     const module = { exports: {} }
     const exports = module.exports
 
@@ -567,8 +567,13 @@ window.__ModuleLoader__.load({
     /** Re-run the mounted button's placement, if there is one. */
     let placeChrome = () => {}
 
-    /** Nothing is injected: the button is chrome, not a slot entry. */
-    const inject = []
+    /**
+     * The Settings section is a slot entry, so the slot service has to be declared here. Without it
+     * `ctx.slots` is undefined, the registration below is skipped silently, and the restart never appears in
+     * Settings — which is exactly what 0.5.0 shipped, because the guard that was meant to keep a missing
+     * React from breaking anything also swallowed a missing slot service.
+     */
+    const inject = ['slots']
 
     function apply(ctx) {
         if (React !== undefined && h !== undefined && ctx.slots !== undefined) {
