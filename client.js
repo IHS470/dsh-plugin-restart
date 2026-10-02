@@ -38,6 +38,8 @@ window.__ModuleLoader__.load({
       cancel: '取消',
       pending: '正在重启…',
       busy: '已经在重启了，请稍候…',
+      settling: '刚重启过：应用还在启动，请等它起来再试。',
+      settlingSoon: '刚重启过：应用还在启动，约 {n} 秒后再试。',
       stalled: '重启似乎没有生效，请再试一次或手动重启',
       unavailable: '重启能力还没加载：请先重启一次应用',
       failed: '重启失败，请手动重启',
@@ -50,6 +52,8 @@ window.__ModuleLoader__.load({
       cancel: 'Cancel',
       pending: 'Restarting…',
       busy: 'A restart is already in progress…',
+      settling: 'Just restarted: the app is still starting — try again once it is up.',
+      settlingSoon: 'Just restarted: the app is still starting — try again in about {n}s.',
       stalled: 'The restart did not take effect — try again or restart manually',
       unavailable: 'Restart is not loaded yet: restart the app once',
       failed: 'Restart failed — restart manually',
@@ -58,6 +62,19 @@ window.__ModuleLoader__.load({
     function copy() {
       const lang = (document.documentElement && document.documentElement.getAttribute('lang')) || navigator.language || ''
       return lang.toLowerCase().startsWith('zh') ? zh : en
+    }
+
+    /**
+     * What to say when the host is only waiting out the app's boot.
+     *
+     * The host knows how much of that wait is left, so the message counts it down in whole seconds
+     * instead of leaving the user to guess whether the button is broken.
+     */
+    function settlingText(retryInMs) {
+      const text = copy()
+      const seconds = Number(retryInMs)
+      if (!Number.isFinite(seconds) || seconds <= 0) return text.settling
+      return text.settlingSoon.replace('{n}', String(Math.max(1, Math.ceil(seconds / 1000))))
     }
 
     async function request(path, init) {
@@ -283,7 +300,10 @@ window.__ModuleLoader__.load({
           }
           busy = false
           if (result && result.code === 'unavailable') ready = false
+          // `settling` is a restart that is over except for waiting out the app's boot: the honest
+          // answer is "the app is starting, give it a moment", not "something is already running".
           if (result && result.code === 'busy') say(copy().busy)
+          else if (result && result.code === 'settling') say(settlingText(result.retryInMs))
           else say(result && result.code === 'unavailable' ? copy().unavailable : copy().failed)
           paint()
         } catch (error) {

@@ -8,7 +8,7 @@
  * same-origin loopback request.
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -117,12 +117,33 @@ writeLock(Date.now() - 10 * 60 * 1000)
 const staleState = await call(handler, makeReq({ url: '/dsh-restart/state' }))
 assert.equal(staleState.json.busy, false, 'a stale lock does not count as busy')
 
+// --- 3b. a restart that is only waiting out the app's boot -------------------
+
+// Held past the app's start on purpose: a click a couple of seconds later must be told to wait rather
+// than kill an app that is still starting, which is how a restart ends up looking stuck.
+writeFileSync(LOCK_FILE, JSON.stringify({ started: Date.now(), stage: 'settling', settleUntil: Date.now() + 5000, helper: process.pid }))
+const settlingState = await call(handler, makeReq({ url: '/dsh-restart/state' }))
+assert.equal(settlingState.json.busy, true, 'the lock is still held while the app settles')
+assert.equal(settlingState.json.stage, 'settling', 'and the state says which part of the restart it is')
+const settling = await call(handler, makeReq({ method: 'POST', url: '/dsh-restart/restart' }))
+assert.equal(settling.json.code, 'settling', 'a click during the settle is told what is happening')
+assert.ok(settling.json.retryInMs > 0 && settling.json.retryInMs <= 5000, `with the time left to wait (${settling.json.retryInMs}ms)`)
+console.log(`3b settling: ${JSON.stringify(settling.json)}`)
+
+// The lock carries its own deadline: once the app has settled, the restart is over even if the helper
+// that wrote the lock never got to release it.
+writeFileSync(LOCK_FILE, JSON.stringify({ started: Date.now() - 2000, stage: 'settling', settleUntil: Date.now() - 10 }))
+const pastSettle = await call(handler, makeReq({ url: '/dsh-restart/state' }))
+assert.equal(pastSettle.json.busy, false, 'a settle that has passed no longer counts as busy')
+assert.equal(existsSync(LOCK_FILE), false, 'and the lock is cleared instead of left behind')
+
 // --- 4. the last restart is reported back ------------------------------------
 
-writeFileSync(LAST_RUN_FILE, JSON.stringify({ ok: true, attempts: 1, pokes: 3, version: '0.1.1' }))
+writeFileSync(LAST_RUN_FILE, JSON.stringify({ ok: true, attempts: 1, pokes: 1, straysClosed: 0, version: '0.3.0' }))
 const withLast = await call(handler, makeReq({ url: '/dsh-restart/state' }))
 assert.equal(withLast.json.last.ok, true, 'the last restart outcome is readable')
-assert.equal(withLast.json.last.pokes, 3, 'including how the window was raised')
+assert.equal(withLast.json.last.pokes, 1, 'including how the window was raised')
+assert.equal(withLast.json.last.straysClosed, 0, 'and whether a previous generation had to be closed')
 console.log('4 last run:', JSON.stringify(withLast.json.last))
 
 // --- 5. the trust fence -----------------------------------------------------

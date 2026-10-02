@@ -4,6 +4,84 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-02
+
+The restart stops spending the user's time on its own bookkeeping, the window is no longer raised into
+the middle of the app's boot, and two restarts in quick succession can no longer start two of them.
+
+### Fixed
+
+- **0.2.0 put a process enumeration on the critical path.** Closing the shell cost about 0.3 s and the
+  `tasklist` scan that followed cost about 0.25 s more, both before the app was allowed to start. The
+  scan now *overlaps* the shell's death — started before the shell is closed, read afterwards — so the
+  app starts in about the time the shell takes to go.
+- **The guardian could release a lock whose restart was still running.** It cleared the lock whenever it
+  had to act, which would let the next click start a second helper; two helpers each closing a shell and
+  starting an app is a good way to end up with a stuck machine. It now leaves a live restart's lock
+  alone and clears only an abandoned one.
+- **A restart a couple of seconds after the previous one killed an app mid-boot**, which is the other way
+  a restart looks stuck. The lock is now held until the app has kept answering for six seconds, and a
+  click during that window is answered `settling` with the time left to wait — the button counts down
+  instead of appearing to do nothing.
+
+### Changed
+
+- The shell is closed with `process.kill` instead of starting `taskkill.exe` (worth about 0.1 s on its
+  own), and the lock carries its own `settleUntil`: a lock that outlives its restart stops counting then,
+  rather than after the three-minute bound.
+- The window is raised **once, about five seconds after the app answers** instead of three, so the raise
+  lands on a window that exists rather than competing with the app's own boot for CPU.
+- `GET /dsh-restart/state` reports `stage`, and `POST /dsh-restart/restart` can answer
+  `{ok:false, code:'settling', retryInMs}`.
+- `DSH_RESTART_SETTLE_MS` overrides the six-second settle.
+
+### Notes
+
+Click-to-launch measures about **0.3 s** here (0.1.1: 0.32 s; 0.2.0: ~0.65 s, with the scan in series) —
+and the app's own boot is untouched: it answers on its web port about 2.5 s after the launch and shows
+its window some time after that. That floor belongs to the app, not to this plugin, and the marks in
+`relaunch.log` say which of the two you are waiting for.
+
+[0.3.0]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.3.0
+
+## [0.2.0] - 2026-10-02
+
+The restart can no longer end with the app closed, and it no longer fights the app it replaces.
+
+A restart is performed by a helper process that closes the desktop shell and starts the app again. Two
+things could still go wrong, and both of them end the same way for the user — an app that does not come
+back:
+
+- If the helper died in between (killed, a suspended machine, a security tool, every launch attempt
+  losing the single-instance race), nothing was left to start the app.
+- A killed Electron shell can leave children behind for a moment. They hold the profile open, and an
+  app that starts into a held profile is the classic way to end up with a running process and no
+  window.
+
+### Added
+
+- **A guardian**: the host starts `lib/guardian.mjs` *before* the helper, and it outlives both. If the
+  app has not answered on its web port within 25 s of a restart starting, the guardian releases the
+  dead helper's lock and starts the app itself, up to three times. It is deliberately blunt — no state
+  of its own, any failure ends in a log line — because it is the code that runs when everything else
+  has already gone wrong. `DSH_RESTART_GUARDIAN_GRACE_MS` overrides the grace.
+- **The previous generation is cleared before the next one starts**: every process running the app's
+  image is accounted for after the shell dies, and whatever survives the wait is closed by pid. The
+  summary reports how many (`straysClosed`).
+- `guardian.log` beside the other diagnostics, and `last-run.json` gained `straysClosed` and `pokes`.
+
+### Changed
+
+- **The window is raised once, not three times.** Each raise is a whole Electron start competing with
+  the app that is still booting, which is a lot of work for a nudge. A raise that lingers after handing
+  over to the running instance is now closed again instead of being left as a second instance.
+- The old host is confirmed gone *after* the launch rather than waited on before it — it leaves on its
+  own within about a tenth of a second, and that wait used to sit on the user's clock.
+- `DSH_RESTART_POKE_MS` is now the delay before that single raise (default 3000 ms) rather than a list
+  of gaps.
+
+[0.2.0]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.2.0
+
 ## [0.1.1] - 2026-10-02
 
 A pass over the restart itself: faster where the plugin was the bottleneck, and harder to get wrong

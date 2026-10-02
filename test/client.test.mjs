@@ -198,6 +198,22 @@ assert.equal(note(d).textContent, '已经在重启了，请稍候…', 'a second
 assert.equal(goButton(d).disabled, false, 'and the button is usable again')
 console.log('D busy case:', note(d).textContent)
 
+// --- case D2: a restart that is only waiting out the app's boot ---------------
+
+const d2 = boot(async (url) => (
+  String(url).endsWith('/restart')
+    ? { ok: true, json: async () => ({ ok: false, code: 'settling', retryInMs: 4300 }) }
+    : { ok: true, json: async () => ({ restart: { available: true } }) }
+))
+chromeButton(d2).dispatch('click')
+await flush()
+goButton(d2).dispatch('click')
+await flush()
+assert.match(note(d2).textContent, /刚重启过/, 'a click while the app is still starting says so')
+assert.match(note(d2).textContent, /5 秒/, 'and counts the wait the host reported (4300ms up to 5s)')
+assert.equal(goButton(d2).disabled, false, 'the button stays usable for the retry')
+console.log('D2 settling case:', note(d2).textContent)
+
 // --- case E: keyboard ---------------------------------------------------------
 
 const e = boot(serveState)
