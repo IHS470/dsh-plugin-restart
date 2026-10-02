@@ -63,10 +63,12 @@ restart is therefore these things, each one forced by observed behaviour:
    children behind for a moment — renderers, GPU helpers, a host that has not exited yet. They hold the
    profile open, and an app that starts into a held profile is the classic way to end up with a running
    process and no window. So every process running the app's image is accounted for, and whatever
-   survives is closed by pid; the summary reports how many (`straysClosed`). **That enumeration runs in
-   parallel with closing the shell**: `tasklist` needs about 250 ms to start, which is about what the
-   shell needs to die, so the two overlap instead of adding up. 0.2.0 ran it afterwards, in series, and
-   spent those 250 ms on the user's clock.
+   survives is closed by pid; the summary reports how many (`straysClosed`). **Strays are identified by
+   creation time, not by pid — a lesson 0.4.0 paid for: those pids are recycled the moment the old
+   generation dies, and the first process to receive one is usually the app just launched, so the helper
+   closed its own window six seconds in.** The check runs *after* the launch (a second of CIM is on
+   nobody's clock there), and a process whose creation time cannot be read is left alone rather than
+   guessed at.
 4. **Start the app as soon as the shell is gone — do not wait for the old host.** The old host leaves
    on its own about a tenth of a second after the shell dies, while the new app needs several seconds
    before its own host binds the port: waiting here was serial latency on the user's clock. The shell is

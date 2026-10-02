@@ -186,10 +186,14 @@ async function restart(name, { exe = appExe, appProbe = probe, hostExits = true,
   const shellAlive = alive(shell.pid)
   const hostAlive = alive(host.pid)
   const stragglerAlive = oldGeneration === undefined ? undefined : alive(oldGeneration.pid)
+  // The app the helper launched, taken from its own log. 0.4.0 killed this process — it matched a
+  // previous generation by pid, and pids are recycled the moment that generation dies.
+  const appPid = Number(/launch attempt 1: pid=(\d+)/.exec(log)?.[1])
+  const appAliveAtEnd = Number.isFinite(appPid) && appPid > 0 ? alive(appPid) : undefined
   for (const child of [shell, host, oldGeneration]) if (child !== undefined && alive(child.pid)) child.kill()
   return {
     name, code, log, summary, launches, elapsed, lockDuring, launchedAt,
-    shellPid: shell.pid, hostPid: host.pid, shellAlive, hostAlive, stragglerAlive,
+    shellPid: shell.pid, hostPid: host.pid, shellAlive, hostAlive, stragglerAlive, appPid, appAliveAtEnd,
     lockPath, appLogPath, marker, appLog: read(appLogPath),
   }
 }
@@ -303,21 +307,53 @@ console.log('5 first launch lost the race: retried, and the second attempt took'
 
 // --- 6. a straggler of the previous generation --------------------------------
 
-const straggler = await restart('a straggler survives the shell', { stray: true })
+const straggler = await restart('a straggler survives the shell', {
+  stray: true,
+  // Long enough that both the straggler and the app the helper starts are still running when the
+  // harness looks: the point of the scenario is which of the two the helper closes.
+  extraEnv: { PROBE_LIFE_MS: '20000' },
+})
 assert.equal(straggler.summary.ok, true, 'the restart still succeeded')
 assert.ok(straggler.summary.straysClosed >= 1, `the straggler was closed (${straggler.summary.straysClosed})`)
 assert.ok(/stray app process: closing pid/.test(straggler.log), 'and it is named in the log')
 assert.equal(straggler.stragglerAlive, false, 'the straggler is gone by the time the harness looks')
+// The regression 0.4.0 shipped: a pid snapshot taken before the launch contained the pid the operating
+// system then handed to the new app, so the helper closed the app it had just started.
+assert.equal(straggler.appAliveAtEnd, true, 'and the app the helper launched was NOT mistaken for a straggler')
 const strayAt = straggler.log.search(/stray app process: closing pid/)
 assert.ok(strayAt > 0 && straggler.log.search(/launch attempt 1/) < strayAt, 'the app is started first and the straggler is cleared while it boots')
 console.log(`6 straggler: cleared while the app boots (straysClosed=${straggler.summary.straysClosed})`)
+// --- 7. the strays test itself -------------------------------------------------
+//
+// The scenario above cannot reproduce 0.4.0's failure on demand: it needed the operating system to hand
+// the new app a pid that a *previous* generation had just released. This tests the mechanism directly —
+// two stand-ins, one started before a moment in time and one after, and the question "which of these
+// existed before that moment" must have exactly one answer.
+
+const beforeMark = join(root, 'born-before.exe')
+const afterMark = join(root, 'born-after.exe')
+copyFileSync(process.execPath, beforeMark)
+copyFileSync(process.execPath, afterMark)
+const older = spawn(beforeMark, [], { stdio: 'ignore', windowsHide: true, env: helperEnvFor(probe, join(root, 'born-marker.txt'), join(root, 'born-flag.txt'), { PROBE_LIFE_MS: '20000' }) })
+await sleep(700)
+const cutoff = Date.now()
+const younger = spawn(afterMark, [], { stdio: 'ignore', windowsHide: true, env: helperEnvFor(probe, join(root, 'born-marker.txt'), join(root, 'born-flag.txt'), { PROBE_LIFE_MS: '20000' }) })
+await sleep(700)
+const { appProcessesBefore } = await import('../lib/proc.mjs')
+const olderList = await appProcessesBefore('born-before.exe', cutoff)
+const youngerList = await appProcessesBefore('born-after.exe', cutoff)
+assert.ok(olderList.includes(older.pid), 'a process started before the launch is a candidate')
+assert.ok(!youngerList.includes(younger.pid), 'a process started after it is not — which is what 0.4.0 got wrong by matching pids instead')
+for (const child of [older, younger]) if (alive(child.pid)) child.kill()
+console.log(`7 strays test: older=${olderList.includes(older.pid)} younger=${youngerList.includes(younger.pid)}`)
+
 console.log('\nhelper log (a straggler survives the shell):')
 console.log(straggler.log.trim().split('\n').map((line) => `  ${line}`).join('\n'))
 console.log('')
 console.log('RESULT: dsh-plugin-restart relaunch helper closes the shell first, refuses to close what it')
 console.log('        cannot restart, clears the previous generation, launches the app without')
 console.log('        ELECTRON_RUN_AS_NODE, retries a lost lock race, captures the app output, raises the')
-console.log('        window once, and never uses /T')
+console.log('        window once, never kills the app it just started, and never uses /T')
 
 server.close()
 try { rmSync(root, { recursive: true, force: true }) } catch {}

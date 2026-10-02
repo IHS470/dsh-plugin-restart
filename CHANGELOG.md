@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-10-02
+
+### Fixed
+
+**0.4.0 could close the window it had just opened.** The restart helper clears whatever is left of the
+previous generation before the app is left to boot, and 0.4.0 moved that check to *after* the launch while
+still matching by **pid**. Those pids are recycled the moment the old generation dies — and the first
+process to receive one of them is the app being started. So the helper found the new app's own pid in a
+snapshot taken before the launch, waited its five seconds, and killed it, about six seconds in, after the
+app had already begun serving. On the machine where this was caught, the log says it exactly:
+
+```
+launch attempt 1: pid=2936
+stray app process: closing pid 2936     <- the app this helper had just started
+```
+
+Strays are now identified by **creation time** (`appProcessesBefore`): only a process that existed before
+the helper started can be a leftover, because anything the restart launches is newer. Creation time cannot
+be recycled, and a process whose creation time cannot be read is left alone rather than guessed at. The
+guardian uses the same test, so it can no longer close a slow-starting app either.
+
+The test harness now asserts both halves: the straggler *is* closed, and the app the helper launched is
+*not*. It also tests the mechanism directly, because pid reuse cannot be provoked on demand.
+
+[0.4.1]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.4.1
+
 ## [0.4.0] - 2026-10-02
 
 The only part of a restart a user waits for is the part that starts the app, and now nothing else is in
