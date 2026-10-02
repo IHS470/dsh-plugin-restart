@@ -86,3 +86,71 @@ dsh-plugin-restart 会在「正常退出」模式下调用 `window.dshDesktop.re
 运行时没有额外开销：启动阶段不做新事情，只多一个 IPC handler，而它调用的路径
 （`quitWithoutConfirmation` + `app.relaunch`）本来就从托盘菜单在跑。同源校验用的是 `directoryPick`
 已有的那套，所以 Desktop 文档之外的页面够不到它。
+
+---
+
+## 附：另一个独立的、很小的请求 —— 托盘右键菜单里加一个「重启」
+
+这一条和上面的插件 API 无关，是**壳自己的 UI**，所以单独列出；但它解决的是同一件事的用户体验。
+
+### 现状（Electron 44，`@deepseek-ai/dsh-desktop` 0.2.0-rc.2）
+
+托盘右键菜单里**只有两项**，定义在 `lib/main.js:10853-10867` 的 `DesktopTray.relabel()`：
+
+```js
+tray.setContextMenu(Menu.buildFromTemplate([
+  { label: messages.openApplication, click: () => { this.options.open(); } },
+  { type: "separator" },
+  { label: messages.quitApplication, click: () => { this.options.quit(); } }
+]));
+```
+
+**「重启」在壳里其实已经写好了，只是被挡在开发构建后面**：`lib/main.js:11899-11913` 的应用菜单项
+
+```js
+...development ? [
+  { type: "separator" },
+  { label: currentDesktopLocale().messages.reloadPageMenu, role: "reload" },
+  {
+    label: currentDesktopLocale().messages.restartAppHostMenu,
+    click: () => { if (quitting) return; app.relaunch(); quitWithoutConfirmation(); }
+  }
+] : [],
+```
+
+也就是说：**正式构建里连应用菜单都没有这一项**，而托盘里从来没有过。
+
+### 为什么插件做不到
+
+托盘在壳的主进程里（`new Tray`、`setContextMenu`）。插件跑在两个地方：宿主机（纯 Node，没有 Electron API）和页面渲染进程（preload 只暴露固定的 `dshDesktop`：`browser`、`deviceInfo`、`shortcuts`、`updates`、`closeWindow`——**没有 Tray，也没有菜单**）。所以插件无法向托盘菜单添加任何一项。
+
+### 建议的改法（三处，都在 `lib/main.js`）
+
+1. **托盘菜单加一项**（`10853-10867` 的模板里，放在分隔线之前）：
+
+```js
+  {
+    label: messages.restartApplication,
+    click: () => {
+      this.options.restart();
+    }
+  },
+```
+
+2. **给托盘的构造参数加上 restart**（`11939-11948`）：
+
+```js
+  restart: () => {
+    if (quitting) return;
+    app.relaunch();
+    quitWithoutConfirmation();
+  },
+```
+
+   用的是应用菜单里那段**完全一样**的代码（`app.relaunch()` + `quitWithoutConfirmation()`），并且同样先判 `quitting`，避免重复触发。
+
+3. **文案**：本地化里已经有 `restartApplication`（`lib/main.js:6584` 一带的英文表、以及中文表）。若希望托盘里更明确，也可以用已有的 `restartAppHostMenu`（`Restart App and Host` / `重启应用与 Host`）。
+
+### 为什么这条值得做（除了方便）
+
+它带来的是**真正干净的退出**：走 `app.quit()` 而不是被强杀，于是 **Electron 会自己移除托盘图标**——正是用户反复问过的「为什么重启的时候托盘里的图标还在」。插件现在只能结束壳的进程，Windows 会留下一个幽灵图标直到鼠标划过；这条路没有这个问题。
