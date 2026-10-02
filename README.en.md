@@ -82,7 +82,7 @@ restart is therefore these things, each one forced by observed behaviour:
 6. **Strip `ELECTRON_RUN_AS_NODE` before launching.** That variable is how the shell runs the host as
    Node, so the helper inherits it; passed on to the app, Electron starts as a script-less Node
    process: no window, instant exit — exactly "the app closed and never came back".
-7. **Poke the app once it answers — once — and then leave it alone.** The shell answers a second launch
+7. **The window raise is off by default (`DSH_RESTART_RAISE=1` turns it on).** The shell answers a second launch
    by focusing its own window (`second-instance`), which is the only lever a plugin has on window
    visibility, and each poke is a whole Electron start competing with an app that is still booting. So
    it happens once, **4 s after the app answers**, inside the settle window below (`DSH_RESTART_POKE_MS` overrides that delay) — three

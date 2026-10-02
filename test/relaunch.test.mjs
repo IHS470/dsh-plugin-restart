@@ -133,7 +133,7 @@ function helperEnvFor(appProbe, marker, flag, extra = {}) {
  * seconds, so scenarios sharing one directory raced each other's cleanup — and could read each other's
  * marker while a probe was still alive. That is how this harness failed on a Windows runner once.
  */
-async function restart(name, { exe = appExe, appProbe = probe, hostExits = true, withUrl = true, legacy = false, stray = false } = {}) {
+async function restart(name, { exe = appExe, appProbe = probe, hostExits = true, withUrl = true, legacy = false, stray = false, extraEnv = {} } = {}) {
   const dir = join(root, name.replace(/[^a-z0-9]+/gi, '-').toLowerCase())
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
@@ -163,7 +163,7 @@ async function restart(name, { exe = appExe, appProbe = probe, hostExits = true,
     args.push(`--lock=${lockPath}`)
   }
   const started = Date.now()
-  const helper = spawn(process.execPath, args, { stdio: 'ignore', env: helperEnvFor(appProbe, marker, flag) })
+  const helper = spawn(process.execPath, args, { stdio: 'ignore', env: helperEnvFor(appProbe, marker, flag, extraEnv) })
   // Sampled while the helper is still running: the lock has to say, from the inside, that the restart
   // is over except for the app settling — that is what keeps a second click from killing a booting app.
   let lockDuring
@@ -201,7 +201,8 @@ assert.equal(ordinary.code, 0, 'the helper exits cleanly')
 assert.equal(ordinary.summary.ok, true, 'the restart succeeded')
 assert.equal(ordinary.summary.answered, true, 'the app answered on its web port')
 assert.equal(ordinary.summary.attempts, 1, 'the first launch took')
-assert.equal(ordinary.summary.pokes, 1, 'the window was raised exactly once')
+assert.equal(ordinary.summary.pokes, 0, 'no second instance is started just to raise the window')
+assert.match(ordinary.log, /window raise is off/, 'and the log says so')
 assert.equal(ordinary.summary.straysClosed, 0, 'there was nothing of a previous generation to close')
 assert.equal(ordinary.summary.appExit, null, 'the app never exited')
 assert.ok(ordinary.summary.ms.shellGone < ordinary.summary.ms.appStarted, 'the app starts after the shell is gone')
@@ -224,13 +225,24 @@ assert.ok(ordinary.launchedAt !== undefined && ordinary.launchedAt < 2500, `and 
 assert.equal(ordinary.lockDuring?.stage, 'settling', 'the lock reports that the restart is only settling')
 assert.ok(Number(ordinary.lockDuring?.settleUntil) > Date.now() - ordinary.elapsed, 'and carries the moment it stops counting')
 assert.ok(ordinary.lockDuring?.appPid > 0, 'naming the app it started, so the guardian leaves it alone')
-assert.ok(ordinary.log.search(/answering=true/) < ordinary.log.search(/poked the app/), 'the window is raised only after the app answers')
 // The settle window is measured from the app answering and the raise happens inside it, so with a short
 // settle in the harness (and a stand-in that takes its time to exit) there may be no time left to wait —
 // what matters is that the helper does not consider itself done until the settle has passed.
 assert.ok(ordinary.summary.ms.settled !== undefined, 'the helper waits out the settle before releasing the lock')
 assert.ok(ordinary.summary.ms.settled >= ordinary.summary.ms.appUp, 'and that wait starts when the app answers')
 console.log(`1 ordinary restart: launched=${ordinary.summary.ms.appStarted}ms appUp=${ordinary.summary.ms.appUp}ms settled=${ordinary.summary.ms.settled ?? '-'}ms total=${ordinary.summary.ms.total}ms`)
+
+// --- 1b. the window raise, on request -----------------------------------------
+//
+// Off by default: it costs a whole Electron start and lands while the app's own UI is loading. A machine
+// where the restored window really does come up behind something else can turn it back on.
+
+const raised = await restart('window raise on request', { extraEnv: { DSH_RESTART_RAISE: '1' } })
+assert.equal(raised.summary.pokes, 1, 'the raise happens when it is asked for')
+assert.equal(raised.launches.length, 2, 'as one extra app start')
+assert.ok(raised.log.search(/answering=true/) < raised.log.search(/poked the app/), 'and only after the app answers')
+console.log('1b raise on request: one extra launch, after the app answered')
+
 
 // --- 2. the host overstays ----------------------------------------------------
 
@@ -248,7 +260,7 @@ console.log('2 host overstays: the old host was closed, then the app was started
 const noUrl = await restart('no web address', { withUrl: false })
 assert.equal(noUrl.summary.ok, true, 'the restart succeeded without an address to poll')
 assert.equal(noUrl.summary.answered, false, 'nothing answered, and that is not a failure here')
-assert.equal(noUrl.summary.pokes, 1, 'the window is still raised once')
+assert.equal(noUrl.summary.pokes, 0, 'the window raise stays off here too')
 assert.ok(/web=\(none\)/.test(noUrl.log), 'and the log says there was no address to poll')
 assert.ok(/lock=.*relaunch\.lock/.test(noUrl.log), 'while the lock path still arrived intact')
 console.log('3 no web address: waited out a boot and raised the window once')
@@ -297,8 +309,8 @@ assert.ok(straggler.summary.straysClosed >= 1, `the straggler was closed (${stra
 assert.ok(/stray app process: closing pid/.test(straggler.log), 'and it is named in the log')
 assert.equal(straggler.stragglerAlive, false, 'the straggler is gone by the time the harness looks')
 const strayAt = straggler.log.search(/stray app process: closing pid/)
-assert.ok(strayAt > 0 && straggler.log.search(/launch attempt 1/) > strayAt, 'the app starts only once the profile is free')
-console.log(`6 straggler: closed before the launch (straysClosed=${straggler.summary.straysClosed})`)
+assert.ok(strayAt > 0 && straggler.log.search(/launch attempt 1/) < strayAt, 'the app is started first and the straggler is cleared while it boots')
+console.log(`6 straggler: cleared while the app boots (straysClosed=${straggler.summary.straysClosed})`)
 console.log('\nhelper log (a straggler survives the shell):')
 console.log(straggler.log.trim().split('\n').map((line) => `  ${line}`).join('\n'))
 console.log('')

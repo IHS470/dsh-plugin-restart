@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-02
+
+The only part of a restart a user waits for is the part that starts the app, and now nothing else is in
+front of it.
+
+### Changed
+
+- **The window raise is off by default.** It costs a whole Electron start and it lands while the app's own
+  UI is still loading — the worst possible moment to spend CPU on a nudge, and a freshly started app shows
+  its own window anyway. `DSH_RESTART_RAISE=1` turns it back on for a machine where the restored window
+  really does come up behind something else; both behaviours are tested.
+- **The previous generation is cleared *after* the launch instead of before it.** The enumeration was
+  already overlapped with the shell's death, but it still had to be awaited before the app could start.
+  Now it is read while the app boots — and reading it late is safe by construction: it was taken before the
+  launch, so anything from it that is still alive cannot be the app being started.
+
+### Notes
+
+Measured from a reporter's own `relaunch.log`, five restarts in a row: shell gone at 109–120 ms (100 ms of
+which is the deliberate pause that lets the button show "restarting"), app launched at 250–341 ms — of
+which ~250 ms was the enumeration 0.3.x did first — and the app serving on its port at 2.49–2.57 s. The
+window and UI follow that. **A restart cannot be faster than the app's own boot**: start the app by hand
+and time it to see that floor.
+
+[0.4.0]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.4.0
+
 ## [0.3.1] - 2026-10-02
 
 ### Fixed
