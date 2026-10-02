@@ -37,8 +37,14 @@ window.__ModuleLoader__.load({
     /** The settings in force, once they have been read; the chrome reads this to place itself. */
     let chromeStateRequest
     let chromeSettings
-    /** How the mounted chrome re-places or removes itself when a setting changes. */
-    const chrome = { reposition: () => {}, unmount: () => {} }
+    /**
+     * How the mounted chrome follows the settings.
+     *
+     * `sync` both takes the caption button away and brings it back, which is what a position setting needs.
+     * 1.0.0 could only remove it: choosing Settings-only and then another position left no button at all, and
+     * nothing left that could have mounted one.
+     */
+    const chrome = { sync: () => {}, reposition: () => {} }
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
     const PREFIX = '/dsh-restart'
@@ -528,6 +534,8 @@ window.__ModuleLoader__.load({
     function SettingsSection() {
       const [settings, setSettings] = React.useState(undefined)
       const [notice, setNotice] = React.useState('')
+      // What the user is currently typing in a number field, so a keystroke is not a request.
+      const [draft, setDraft] = React.useState({})
 
       React.useEffect(() => {
         const style = document.createElement('style')
@@ -564,8 +572,9 @@ window.__ModuleLoader__.load({
           // The caption button is another component and has to follow at once — and it disappears entirely when
           // the user asks for Settings-only.
           chromeSettings = next
-          if (next.button === 'settings') chrome.unmount()
-          else chrome.reposition()
+          chrome.sync()
+          // Announced too, so the chrome and anything else that cares see the same thing.
+          window.dispatchEvent?.(new CustomEvent('dsh-restart:settings', { detail: next }))
         } catch {
           setNotice(text.failed)
         }
@@ -590,13 +599,21 @@ window.__ModuleLoader__.load({
         onClick: () => void save(patch(!checked)),
       }, h('span', { className: 'dsh-restart-switch-knob' }))
 
-      const number = (value, step, patch) => h('span', { className: 'dsh-restart-field' },
+      const number = (value, step, patch, key) => h('span', { className: 'dsh-restart-field' },
         h('input', {
           className: 'dsh-restart-number',
           type: 'number',
           step,
-          value,
-          onChange: (event) => void save(patch(Number(event.target.value))),
+          value: draft[key] ?? value,
+          onChange: (event) => setDraft({ ...draft, [key]: event.target.value }),
+          // Sent when the field is left, not on every keystroke: otherwise typing 12 asks for 1 first and the
+          // answer snaps the field back mid-edit.
+          onBlur: (event) => {
+            setDraft({ ...draft, [key]: undefined })
+            const next = Number(event.target.value)
+            if (Number.isFinite(next) && next !== Number(value)) void save(patch(next))
+          },
+          onKeyDown: (event) => { if (event.key === 'Enter') event.target.blur?.() },
         }))
 
       const group = (title, children) => h('div', { className: 'dsh-restart-group' },
@@ -615,7 +632,7 @@ window.__ModuleLoader__.load({
             segmented(settings.button, [['right', text.buttonRight], ['left', text.buttonLeft], ['settings', text.buttonSettings]], (value) => ({ button: value }))),
           row(text.settingsOffset, text.settingsOffsetHint,
             h('span', { className: 'dsh-restart-field' },
-              number(settings.offset, 2, (value) => ({ offset: value })),
+              number(settings.offset, 2, (value) => ({ offset: value }), 'offset'),
               h('span', undefined, text.offsetUnit))),
         ]),
         group(text.groupWindow, [
@@ -623,7 +640,7 @@ window.__ModuleLoader__.load({
             toggle(settings.pageWait === true, (value) => ({ pageWait: value }))),
           row(text.settingsSettle, text.settingsSettleHint,
             h('span', { className: 'dsh-restart-field' },
-              number(Math.round(Number(settings.settleMs ?? 0) / 1000), 1, (value) => ({ settleMs: value * 1000 })),
+              number(Math.round(Number(settings.settleMs ?? 0) / 1000), 1, (value) => ({ settleMs: value * 1000 }), 'settle'),
               h('span', undefined, text.settleUnit))),
         ]),
         h('div', { className: 'dsh-restart-actions' },
@@ -675,25 +692,56 @@ window.__ModuleLoader__.load({
         // absent, and the Host answers whether a restart is possible in the first place.
         const overlay = navigator.windowControlsOverlay
         if (overlay !== undefined && overlay.visible === false) return () => {}
-        ensureStyle()
-          let unmount = mountRestartButton()
-          chrome.unmount = () => { unmount(); unmount = () => {} }
+          ensureStyle()
+          let mounted = false
+          let unmount = () => {}
+          const mount = () => {
+            if (mounted) return
+            unmount = mountRestartButton()
+            mounted = true
+          }
+          const remove = () => {
+            if (!mounted && unmount === undefined) return
+            // Cleared first, and the teardown guarded: if unmounting ever throws, the flag must not stay set —
+            // otherwise nothing can ever mount the button again, which is exactly the bug 1.0.1 exists to fix.
+            mounted = false
+            try {
+              unmount()
+            } catch {}
+            unmount = () => {}
+          }
+          /** The button exists unless the settings say it should live in Settings only. */
+          chrome.sync = () => {
+            if (chromeSettings?.button === 'settings') remove()
+            else {
+              mount()
+              placeChrome()
+            }
+          }
           chrome.reposition = () => placeChrome()
+          // Mount it now: the settings answer arrives a moment later and may take it away again.
+          mount()
+          // The settings page is another component, so it announces a change instead of reaching in here.
+          const onSettings = (event) => {
+            chromeSettings = event?.detail ?? chromeSettings
+            chrome.sync()
+          }
+          window.addEventListener?.('dsh-restart:settings', onSettings)
           // Placement needs the settings, which are read once in the background: until that answer arrives the
           // button sits where it always did, then moves — or goes away — a moment later.
           chromeStateRequest = request(`${PREFIX}/state`)
           chromeStateRequest
             .then((state) => {
               chromeSettings = state.settings ?? {}
-              if (chromeSettings.button === 'settings') chrome.unmount()
-              else placeChrome()
+              chrome.sync()
           // Tell the Host this page is up. The helper waits for that before it asks the shell to show the
           // window, so what appears is a page that has rendered rather than an empty frame.
           void request(`${PREFIX}/ready`, { method: 'POST' }).catch(() => {})
             })
             .catch(() => {})
           return () => {
-            unmount()
+            window.removeEventListener?.('dsh-restart:settings', onSettings)
+            remove()
           if (styleElement && styleElement.isConnected) styleElement.remove()
           styleElement = null
         }

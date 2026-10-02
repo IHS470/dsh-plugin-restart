@@ -41,11 +41,16 @@ function makeElement(type) {
     removeEventListener(name) { listeners.delete(name) },
     children: [],
     append(...nodes) {
+      for (const node of nodes) node.parent = this
       this.children.push(...nodes)
       this.appended = this.children[0]
     },
     contains(node) { return this.children.includes(node) },
-    remove() { this.isConnected = false },
+    remove() {
+      this.isConnected = false
+      // A real node leaves its parent; without this the harness could never see a removal happen.
+      if (this.parent !== undefined) this.parent.children = this.parent.children.filter((child) => child !== this)
+    },
     dispatch(name, event) { listeners.get(name)?.(event ?? {}) },
     classNames() { return [...classes] },
   }
@@ -61,7 +66,12 @@ function makeElement(type) {
 
 function boot(fetchImpl, { overlayVisible = true, slots } = {}) {
   let captured = null
+// A window that can carry the settings event the chrome listens for.
+const windowListeners = new Map()
   const windowStub = {
+    addEventListener(type, handler) { if (!windowListeners.has(type)) windowListeners.set(type, new Set()); windowListeners.get(type).add(handler) },
+    removeEventListener(type, handler) { windowListeners.get(type)?.delete(handler) },
+    dispatchEvent(event) { for (const handler of windowListeners.get(event?.type) ?? []) handler(event) },
     innerWidth: 1280,
     closed: false,
     close() { this.closed = true },
@@ -98,6 +108,11 @@ function boot(fetchImpl, { overlayVisible = true, slots } = {}) {
   }
   const navigatorStub = { language: 'zh-CN', windowControlsOverlay: overlay }
 
+  // Assigned after the literal: a property with the same name inside it would shadow these,
+  // and then the settings announcement would never reach the chrome.
+  windowStub.addEventListener = (type, handler) => { if (!windowListeners.has(type)) windowListeners.set(type, new Set()); windowListeners.get(type).add(handler) }
+  windowStub.removeEventListener = (type, handler) => { windowListeners.get(type)?.delete(handler) }
+  windowStub.dispatchEvent = (event) => { for (const handler of windowListeners.get(event?.type) ?? []) handler(event) }
   new Function('window', 'document', 'navigator', 'fetch', 'console', 'getComputedStyle', code)(
     windowStub, documentStub, navigatorStub, fetchImpl, console,
     () => ({ getPropertyValue: () => '40px' }),
@@ -155,6 +170,20 @@ await flush()
 assert.equal(popover(a).hidden, true, 'cancel closes it')
 assert.equal(requests.filter((entry) => entry.url === '/dsh-restart/restart').length, 0, 'and no restart was asked of the Host')
 console.log('A cancel: popover closed with no restart request')
+
+// --- case A3: the button comes back when the position stops being "Settings only" -----
+//
+// 1.0.0 could remove the caption button but never mount one again, so choosing Settings-only and then
+// another position left no button at all. This is that regression, tested.
+
+const settingsOnly = boot(async () => ({ ok: true, json: async () => ({ restart: { available: true }, settings: { button: 'settings' } }) }))
+await flush()
+assert.equal(chromeButton(settingsOnly), undefined, 'no caption button while the position is Settings only')
+settingsOnly.windowStub.dispatchEvent({ type: 'dsh-restart:settings', detail: { button: 'right' } })
+await flush()
+assert.ok(chromeButton(settingsOnly), 'and it is mounted again when another position is chosen')
+assert.equal(settingsOnly.rootStyle.values['--dsh-restart-right'], '142px', 'placed at the default position')
+console.log('A3 settings-only to right: the button returns')
 
     // --- case A2: the Settings section is really registered ----------------------
     //

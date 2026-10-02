@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-10-02
+
+### Fixed
+
+- **The caption button could not come back.** Choosing "Settings only" removed it, and choosing any other
+  position afterwards left no button and no way to get one: the chrome only had an unmount. It now has a sync
+  that decides from the settings every time, so the button is mounted again as soon as the position stops being
+  Settings-only, on the side that was chosen.
+- The settings page announces a change instead of reaching into the chrome, which is also what makes this
+  testable: the harness boots with button: 'settings', checks that no button exists, sends the same event the
+  page sends, and checks that the button is there again.
+
+[1.0.1]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v1.0.1
+
 ## [1.0.0] - 2026-10-02
 
 The first stable release. The behaviour people liked in v0.1.0 is the default again, and the options finally
