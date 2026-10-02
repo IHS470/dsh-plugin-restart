@@ -85,7 +85,7 @@ restart is therefore these things, each one forced by observed behaviour:
 7. **Poke the app once it answers — once — and then leave it alone.** The shell answers a second launch
    by focusing its own window (`second-instance`), which is the only lever a plugin has on window
    visibility, and each poke is a whole Electron start competing with an app that is still booting. So
-   it happens once, **5 s after the app answers** (`DSH_RESTART_POKE_MS` overrides that delay) — three
+   it happens once, **4 s after the app answers**, inside the settle window below (`DSH_RESTART_POKE_MS` overrides that delay) — three
    pokes at 2/6/12 s is what 0.1.x spent that CPU on. A poke that lingers after handing over, while the
    app this helper started is still alive, is closed again rather than left as a second instance.
 8. **The lock is held until the app has actually settled.** Six seconds of the app answering
