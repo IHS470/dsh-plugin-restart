@@ -82,6 +82,12 @@ window.__ModuleLoader__.load({
       windowAuto: '自动（缺窗口才抬）',
       windowAlways: '每次都抬',
       windowReport: '只报告',
+      modeLabel: '重启方式',
+      modeClassic: 'v0.1.0 经典',
+      modeLatest: '最新（1.0.x）',
+      modeClassicHint: '经典：应用一答话就把窗口叫出来，之后每秒再叫一次；不握稳定锁，想连点就连点。',
+      modeLatestHint: '最新：等页面渲染好再显示窗口（不会先白着打开），并在应用起来后握 6 秒稳定锁，防止连点杀掉正在启动的应用。',
+      modeCustomHint: '当前是自定义组合：下面的「窗口」设置与两个预设都不完全一致。两个预设永远不会同时生效。',
       groupQuit: '退出方式',
       groupButton: '标题栏按钮',
       groupWindow: '窗口',
@@ -128,6 +134,12 @@ window.__ModuleLoader__.load({
       windowAuto: 'Automatic (raise only when missing)',
       windowAlways: 'Always raise',
       windowReport: 'Report only',
+      modeLabel: 'Restart style',
+      modeClassic: 'v0.1.0 classic',
+      modeLatest: 'Latest (1.0.x)',
+      modeClassicHint: 'Classic: the window is asked for as soon as the app answers, then about every second, and no settle lock is held — click as often as you like.',
+      modeLatestHint: 'Latest: the window waits for the page to render, and a six-second settle lock keeps a second click from killing an app that is still starting.',
+      modeCustomHint: 'These are custom values: the Window settings below match neither preset. The two presets can never both be in effect.',
       groupQuit: 'How it quits',
       groupButton: 'Title bar button',
       groupWindow: 'Window',
@@ -616,6 +628,21 @@ window.__ModuleLoader__.load({
           onKeyDown: (event) => { if (event.key === 'Enter') event.target.blur?.() },
         }))
 
+      /**
+       * Which preset the stored values amount to, or `custom` when they match neither.
+       *
+       * The two options are one control, not two switches: only one of them can ever be the active one, and
+       * choosing one writes both of its values in a single request. A state where both are "on" cannot exist.
+       */
+      const presetOf = (current) => {
+        const settle = Number(current.settleMs ?? 0)
+        if (current.pageWait !== true && settle === 0) return 'classic'
+        if (current.pageWait === true && settle === 6000) return 'latest'
+        return 'custom'
+      }
+
+      const presetValues = (value) => (value === 'classic' ? { pageWait: false, settleMs: 0 } : { pageWait: true, settleMs: 6000 })
+
       const group = (title, children) => h('div', { className: 'dsh-restart-group' },
         h('span', { className: 'dsh-restart-group-title' }, title),
         ...children)
@@ -623,6 +650,13 @@ window.__ModuleLoader__.load({
       return h('section', { className: 'dsh-restart-page' },
         h('h2', { className: 'dsh-restart-title' }, text.settingsTitle),
         h('p', { className: 'dsh-restart-note' }, text.settingsIntro),
+        group(text.modeLabel, [
+          segmented(presetOf(settings), [['classic', text.modeClassic], ['latest', text.modeLatest]], presetValues),
+          h('p', { className: 'dsh-restart-hint' },
+            presetOf(settings) === 'classic' ? text.modeClassicHint
+              : presetOf(settings) === 'latest' ? text.modeLatestHint
+                : text.modeCustomHint),
+        ]),
         group(text.groupQuit, [
           segmented(settings.quit, [['graceful', text.quitGraceful], ['force', text.quitForce]], (value) => ({ quit: value })),
           h('p', { className: 'dsh-restart-hint' }, settings.quit === 'graceful' ? text.quitGracefulHint : text.quitForceHint),

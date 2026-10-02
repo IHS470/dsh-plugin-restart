@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-10-02
+
+### Added
+
+- **A Restart style switch in Settings, with exactly two options**: `v0.1.0 classic` and `Latest (1.0.x)`.
+  Classic asks for the window as soon as the app answers and again about every second, and holds no settle
+  lock; Latest waits for the page to render and holds the six-second settle lock that keeps a second click
+  from killing an app mid-boot. Choosing one writes both of its values in a single request.
+- The two options are **one control, not two switches**: only one can ever be the active one, so "both on" is
+  not a state that can exist. Values that match neither preset are shown as custom, with neither option
+  highlighted and a line saying so, rather than pretending one of them is in effect.
+- A host-side test states the invariant: whatever is stored, exactly one preset matches — never both.
+
+[1.0.2]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v1.0.2
+
 ## [1.0.1] - 2026-10-02
 
 ### Fixed

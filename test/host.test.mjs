@@ -137,6 +137,24 @@ const pastSettle = await call(handler, makeReq({ url: '/dsh-restart/state' }))
 assert.equal(pastSettle.json.busy, false, 'a settle that has passed no longer counts as busy')
 assert.equal(existsSync(LOCK_FILE), false, 'and the lock is cleared instead of left behind')
 
+// --- 3c. the two restart presets are mutually exclusive ----------------------
+//
+// The Settings page offers one choice, not two switches, and these are the two sets of values it writes.
+// Whatever is stored, exactly one preset can match — a state where both are in effect cannot exist.
+
+const classic = { pageWait: false, settleMs: 0 }
+const latest = { pageWait: true, settleMs: 6000 }
+for (const [name, preset] of [['classic', classic], ['latest', latest]]) {
+  const stored = await call(handler, makeReq({ method: 'POST', url: '/dsh-restart/settings', body: preset }))
+  const state = await call(handler, makeReq({ url: '/dsh-restart/settings' }))
+  const body = state.json
+  const matchesClassic = body.pageWait !== true && Number(body.settleMs) === 0
+  const matchesLatest = body.pageWait === true && Number(body.settleMs) === 6000
+  assert.equal(matchesClassic !== matchesLatest, true, `${name}: exactly one preset matches, never both`)
+  assert.ok(Number.isFinite(Number(body.settleMs)), `${name}: settleMs is a number`)
+}
+console.log('3c presets: classic and latest are mutually exclusive')
+
 // --- 4. the last restart is reported back ------------------------------------
 
 writeFileSync(LAST_RUN_FILE, JSON.stringify({ ok: true, attempts: 1, pokes: 1, straysClosed: 0, version: '0.3.0' }))
