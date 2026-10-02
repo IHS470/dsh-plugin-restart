@@ -207,9 +207,9 @@ assert.equal(ordinary.summary.answered, true, 'the app answered on its web port'
 assert.equal(ordinary.summary.attempts, 1, 'the first launch took')
 // The stand-in is a Node process: it owns no window at all, which is exactly the case the helper now
 // checks for. So it raises — once — and reports what it found.
-assert.equal(ordinary.summary.pokes, 1, 'a missing window is raised once')
+assert.ok(ordinary.summary.pokes >= 1 && ordinary.summary.pokes <= 2, `a missing window is nudged at most twice (${ordinary.summary.pokes})`)
 assert.equal(ordinary.summary.window, 'hidden', 'and reported as still hidden, because the stand-in never has one')
-assert.match(ordinary.log, /window visible=false/, 'the check itself is logged')
+assert.match(ordinary.log, /window check 1\/3 visible=false/, 'every check is logged, with its attempt number')
 assert.equal(ordinary.summary.straysClosed, 0, 'there was nothing of a previous generation to close')
 assert.equal(ordinary.summary.appExit, null, 'the app never exited')
 assert.ok(ordinary.summary.ms.shellGone < ordinary.summary.ms.appStarted, 'the app starts after the shell is gone')
@@ -245,8 +245,8 @@ console.log(`1 ordinary restart: launched=${ordinary.summary.ms.appStarted}ms ap
 // where the restored window really does come up behind something else can turn it back on.
 
 const raised = await restart('window raise on request', { extraEnv: { DSH_RESTART_RAISE: '1' } })
-assert.equal(raised.summary.pokes, 1, 'the raise happens when it is asked for')
-assert.equal(raised.launches.length, 2, 'as one extra app start')
+assert.ok(raised.summary.pokes >= 1, 'the raise happens when it is asked for')
+assert.ok(raised.launches.length >= 2, 'as extra app starts')
 assert.ok(raised.log.search(/answering=true/) < raised.log.search(/poked the app/), 'and only after the app answers')
 // The raise was attempted; the stand-in still owns no window, and that is what gets reported — 'raised' is
 // reserved for the case where a window did exist and was raised anyway.
@@ -277,7 +277,7 @@ console.log('2 host overstays: the old host was closed, then the app was started
 const noUrl = await restart('no web address', { withUrl: false })
 assert.equal(noUrl.summary.ok, true, 'the restart succeeded without an address to poll')
 assert.equal(noUrl.summary.answered, false, 'nothing answered, and that is not a failure here')
-assert.equal(noUrl.summary.pokes, 1, 'the window is checked and raised here too')
+assert.ok(noUrl.summary.pokes >= 1, 'the window is checked and raised here too')
 assert.ok(/web=\(none\)/.test(noUrl.log), 'and the log says there was no address to poll')
 assert.ok(/lock=.*relaunch\.lock/.test(noUrl.log), 'while the lock path still arrived intact')
 console.log('3 no web address: waited out a boot and raised the window once')

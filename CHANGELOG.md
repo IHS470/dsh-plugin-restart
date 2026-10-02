@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-10-02
+
+### Fixed
+
+- **The window came back seconds after the app did, which is what made a restart look like a window toggle.**
+  On the machine this was reported from, the log reads `appUp=2348ms` and `windowVisibleMs=6060`: the app was
+  serving for nearly four seconds before its window existed, and during that gap it already owned its tray
+  icon — so from the outside it looked exactly like "it hid in the tray instead of restarting".
+  The window is no longer checked once and raised once: the check starts as soon as the app answers, and while
+  a window is missing the shell is nudged again (each nudge is a second launch, which the shell answers by
+  showing and focusing its own window), stopping the moment it appears. At most **two** nudges, the last
+  attempt only looks, and every attempt is logged — `window check 1/3 visible=false`, and so on.
+
+[0.6.1]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.6.1
+
 ## [0.6.0] - 2026-10-02
 
 Everything this plugin was asked for, in one version: the restart lives in Settings, the window is what
