@@ -117,6 +117,8 @@ function helperEnvFor(appProbe, marker, flag, extra = {}) {
     ELECTRON_RUN_AS_NODE: '1',
     DSH_RESTART_POKE_MS: String(POKE_DELAY_MS),
     DSH_RESTART_SETTLE_MS: String(SETTLE_MS),
+    // The stand-in has no page, so nothing ever reports ready; keep the bounded wait short.
+    DSH_RESTART_READY_MS: '150',
     PROBE_MARKER: marker,
     PROBE_FLAG: flag,
     ...extra,

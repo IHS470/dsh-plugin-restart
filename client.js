@@ -606,6 +606,9 @@ window.__ModuleLoader__.load({
               chromeSettings = state.settings ?? {}
               if (chromeSettings.button === 'settings') chrome.unmount()
               else placeChrome()
+          // Tell the Host this page is up. The helper waits for that before it asks the shell to show the
+          // window, so what appears is a page that has rendered rather than an empty frame.
+          void request(`${PREFIX}/ready`, { method: 'POST' }).catch(() => {})
             })
             .catch(() => {})
           return () => {

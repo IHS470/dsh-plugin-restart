@@ -145,13 +145,15 @@ console.log('A mounts at right =', a.rootStyle.values['--dsh-restart-right'], '|
 chromeButton(a).dispatch('click')
 await flush()
 assert.equal(popover(a).hidden, false, 'the first click arms it visibly')
-assert.equal(requests.length, 1, 'and asks the Host whether a restart is possible')
-assert.equal(requests[0].url, '/dsh-restart/state')
+assert.equal(requests.filter((entry) => entry.url === '/dsh-restart/state').length, 1, 'and asks the Host whether a restart is possible')
+    assert.equal(requests.filter((entry) => entry.url === '/dsh-restart/ready').length, 1, 'while announcing that this page has mounted — the helper shows the window only after that')
+    assert.equal(requests.length, 2, 'which is everything mounting asks for')
+assert.ok(requests.some((entry) => entry.url === '/dsh-restart/state'), 'the capability request is among them')
 
 cancelButton(a).dispatch('click')
 await flush()
 assert.equal(popover(a).hidden, true, 'cancel closes it')
-assert.equal(requests.filter((entry) => entry.method === 'POST').length, 0, 'and nothing was asked of the Host')
+assert.equal(requests.filter((entry) => entry.url === '/dsh-restart/restart').length, 0, 'and no restart was asked of the Host')
 console.log('A cancel: popover closed with no restart request')
 
     // --- case A2: the Settings section is really registered ----------------------
@@ -255,7 +257,7 @@ assert.equal(popover(e).hidden, false, 'the popover is open for the keyboard cas
 e.document.dispatch('keydown', { key: 'Enter', target: { tagName: 'INPUT' } })
 await flush()
 assert.equal(popover(e).hidden, false, 'Enter while typing in a prompt never restarts the app')
-assert.equal(requests.filter((entry) => entry.method === 'POST').length, 0, 'nothing was requested')
+assert.equal(requests.filter((entry) => entry.url === '/dsh-restart/restart').length, 0, 'no restart was requested')
 
 const posted = []
 const f = boot(async (url, init) => {

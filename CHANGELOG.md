@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-10-02
+
+### Fixed
+
+- **A restart could show a window before its page had rendered.** The window is made to appear by asking the
+  shell to show and focus it, and the shell does that the moment it is asked — so asking too early produced an
+  empty frame with the application already behind it, which reads as "it opened without loading".
+  The page now reports when it has mounted (`POST /dsh-restart/ready`, recorded in `page-ready.json`), and the
+  helper only asks for the window after that report — and only a report written *after this launch*, so a stale
+  file from the page that was just closed cannot be mistaken for the new one. The wait is bounded
+  (`DSH_RESTART_READY_MS`, default 8 s): an older page never reports, and a restart must still finish. The log
+  now carries both numbers — `page ready at …ms` and `windowVisibleMs` — so the claim is measurable rather than
+  asserted.
+
+[0.6.2]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.6.2
+
 ## [0.6.1] - 2026-10-02
 
 ### Fixed
