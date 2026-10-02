@@ -145,3 +145,24 @@ npm test
 ## 许可
 
 MIT © 2026 IHS470 · 详见 [LICENSE](LICENSE)
+
+## 托盘菜单里的「重启」（可选：本地补丁工具）
+
+桌面壳的托盘右键菜单原本只有「打开 DeepSeek Harness」和「退出 DeepSeek Harness」。**托盘在壳的主进程里，插件碰不到它**
+（宿主机是纯 Node、没有 Electron API；页面只拿到固定的 `dshDesktop` 表面），所以这一项只能改壳。仓库里带了工具，
+给壳的 `app.asar` 里的 `lib/main.js` 打补丁：在「退出」上面插入一项 **「重启 DeepSeek Harness」**（与另外两项同一命名模式，
+跟随语言），点击走壳自己的 `app.relaunch()` + `quitWithoutConfirmation()`——**Electron 会自己移除托盘图标，不留幽灵图标**。
+
+```bash
+node tools/patch-shell-tray.mjs status   # 当前 app.asar 是否带这块补丁
+node tools/patch-shell-tray.mjs build    # 生成 app.asar.new，并逐文件校验（本机实测 11470 个文件零差异）
+node tools/patch-shell-tray.mjs detach   # 45 秒后由 WMI 创建的独立进程执行切换：关应用 → 换文件 → 重启 → 验证窗口
+node tools/patch-shell-tray.mjs swap     # 立即切换（应用会被关闭；若本进程在应用进程树内会一起被杀，故推荐 detach）
+node tools/patch-shell-tray.mjs revert   # 还原原始 app.asar 并重启
+```
+
+三点如实说明：
+
+- 这是对**厂商打包应用**的本地补丁，不是插件功能；**应用更新或重装会覆盖 `app.asar`**，届时重跑 `build` + `detach` 即可。
+- 切换前原文件会备份为 `app.asar.orig`；若新包起不来，切换进程会在 40 秒内**自动还原并重启**（它由 WMI 创建，不随应用一起被杀）。
+- 长期解法是让壳自己带上这一项：见 [`docs/dsh-restart-api-request.zh.md`](docs/dsh-restart-api-request.zh.md)，里面有精确到行号的补丁。

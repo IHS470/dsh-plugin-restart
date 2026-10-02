@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-10-02
+
+No runtime change: this release ships the tooling and the documentation for the tray restart item.
+
+### Added
+
+- **`tools/patch-shell-tray.mjs`** — patches the installed desktop shell so its tray menu carries a restart item
+  ("Restart DeepSeek Harness", matching the naming of the Open and Quit entries, following the locale). The tool
+  builds the archive from a pristine backup, verifies the result file by file, swaps it in through a process
+  created with WMI (so killing the application cannot kill the swapper), and **restores the original** if the
+  patched archive does not start. `status` and `revert` are included.
+- Both READMEs document the tool, its caveats (it patches the vendor's packaged application; an application update
+  or reinstall overwrites `app.asar`), and the long-term fix in `docs/dsh-restart-api-request*.md`.
+
+[1.0.3]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v1.0.3
+
 ## [1.0.2] - 2026-10-02
 
 ### Added

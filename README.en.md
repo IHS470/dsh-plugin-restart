@@ -181,3 +181,29 @@ npm test
 ## License
 
 MIT © 2026 IHS470 · see [LICENSE](LICENSE)
+
+## A Restart item in the tray menu (optional: bundled local patch tool)
+
+The desktop shell's tray menu only had "Open DeepSeek Harness" and "Quit DeepSeek Harness". The tray lives in the
+shell's main process and **a plugin cannot reach it** (the host is plain Node without Electron APIs; the page only
+gets the fixed `dshDesktop` surface), so this needs a change on the shell side. The bundled tool patches
+`lib/main.js` inside the installed `app.asar`, inserting **"Restart DeepSeek Harness"** above Quit — the same naming
+pattern as the other two entries, following the locale. It calls the shell's own `app.relaunch()` +
+`quitWithoutConfirmation()`, so **Electron removes the tray icon itself** and no ghost icon is left behind.
+
+```bash
+node tools/patch-shell-tray.mjs status   # does the installed app.asar carry the patch
+node tools/patch-shell-tray.mjs build    # write app.asar.new and verify it file by file (11470 files, zero differences)
+node tools/patch-shell-tray.mjs detach   # a WMI-created process swaps in 45s: close, swap, relaunch, verify a window
+node tools/patch-shell-tray.mjs swap     # swap now (the application is closed; use detach if this process is inside it)
+node tools/patch-shell-tray.mjs revert   # restore the original app.asar and relaunch
+```
+
+Three honest notes:
+
+- This is a local patch of the **vendor's packaged application**, not a plugin feature; an application update or
+  reinstall overwrites `app.asar`, and `build` + `detach` have to be run again.
+- The original is backed up as `app.asar.orig`; if the patched archive does not start, the swapper **restores it and
+  relaunches within 40 seconds** (it is created through WMI, so killing the application does not kill it).
+- The long-term fix is for the shell itself to carry the item: see
+  [`docs/dsh-restart-api-request.md`](docs/dsh-restart-api-request.md), which has the patch with line numbers.
