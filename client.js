@@ -76,7 +76,17 @@ window.__ModuleLoader__.load({
       windowAuto: '自动（缺窗口才抬）',
       windowAlways: '每次都抬',
       windowReport: '只报告',
+      groupQuit: '退出方式',
+      groupButton: '标题栏按钮',
+      groupWindow: '窗口',
       settingsSettle: '稳定等待（秒）',
+      offsetUnit: '像素',
+      settleUnit: '秒',
+      pageWaitOffHint: '关闭：应用一答话就把窗口叫出来，之后每秒再叫一次——这就是 v0.1.0 的手感。',
+      restartHint: '会中断正在运行的回合。',
+      settingsSettle: '稳定等待（秒）',
+      settingsPageWait: '等页面加载完成再显示窗口',
+      settingsPageWaitHint: '打开后窗口只在页面渲染好之后出现（不会先白着打开），代价约一秒；关闭就是 v0.1.0 的手感。',
       settingsSettleHint: '应用起来后锁握多久，防止紧接着的第二次重启把它杀在启动中。',
       restartNow: '立即重启',
       settingsLoading: '正在读取设置…',
@@ -112,7 +122,17 @@ window.__ModuleLoader__.load({
       windowAuto: 'Automatic (raise only when missing)',
       windowAlways: 'Always raise',
       windowReport: 'Report only',
+      groupQuit: 'How it quits',
+      groupButton: 'Title bar button',
+      groupWindow: 'Window',
       settingsSettle: 'Settle (seconds)',
+      offsetUnit: 'px',
+      settleUnit: 'seconds',
+      pageWaitOffHint: 'Off: the window is asked for as soon as the app answers, then about every second — this is v0.1.0 behaviour.',
+      restartHint: 'A running turn is interrupted.',
+      settingsSettle: 'Settle (seconds)',
+      settingsPageWait: 'Wait for the page before showing the window',
+      settingsPageWaitHint: 'On: the window appears only once the page has rendered, at the cost of about a second. Off is v0.1.0 behaviour.',
       settingsSettleHint: 'How long the lock is held after the app is up, so a second click cannot kill it mid-boot.',
       restartNow: 'Restart now',
       settingsLoading: 'Reading settings…',
@@ -461,30 +481,67 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** One labelled control in the Settings section. */
+    /** Scoped styles for the settings page; it is the only part that needs them. */
+    const SETTINGS_CSS = [
+      '.dsh-restart-page { display: flex; flex-direction: column; gap: 18px; max-width: 640px; }',
+      '.dsh-restart-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary, inherit); }',
+      '.dsh-restart-note { margin: 0; font-size: 12px; color: var(--dsw-alias-label-secondary, #6b7280); }',
+      '.dsh-restart-group { display: flex; flex-direction: column; gap: 8px; }',
+      '.dsh-restart-group-title { font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--dsw-alias-label-secondary, #6b7280); }',
+      '.dsh-restart-segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: rgba(127,127,127,.12); }',
+      '.dsh-restart-segment { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; cursor: pointer; }',
+      '.dsh-restart-segment:hover { background: rgba(127,127,127,.14); }',
+      '.dsh-restart-segment.is-active { background: var(--dsw-alias-interactive-bg-hover-solid, rgba(127,127,127,.22)); font-weight: 600; }',
+      '.dsh-restart-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }',
+      '.dsh-restart-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }',
+      '.dsh-restart-hint { margin: 0; font-size: 12px; color: var(--dsw-alias-label-secondary, #6b7280); }',
+      '.dsh-restart-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dsw-alias-label-secondary, #6b7280); }',
+      '.dsh-restart-number { width: 72px; padding: 4px 6px; font: inherit; font-size: 13px; text-align: right; border-radius: 6px; border: 1px solid rgba(127,127,127,.35); background: transparent; color: inherit; }',
+      '.dsh-restart-switch { width: 38px; height: 22px; padding: 2px; border: 0; border-radius: 999px; background: rgba(127,127,127,.35); cursor: pointer; display: inline-flex; align-items: center; transition: background .15s ease; }',
+      '.dsh-restart-switch.is-on { background: var(--dsw-alias-brand-primary, #4f7cff); }',
+      '.dsh-restart-switch-knob { width: 18px; height: 18px; border-radius: 999px; background: #fff; transition: transform .15s ease; }',
+      '.dsh-restart-switch.is-on .dsh-restart-switch-knob { transform: translateX(16px); }',
+      '.dsh-restart-actions { display: flex; align-items: center; gap: 10px; padding-top: 4px; }',
+      '.dsh-restart-action { appearance: none; border: 0; font: inherit; font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 8px; cursor: pointer; color: #fff; background: var(--dsw-alias-brand-primary, #4f7cff); }',
+      '.dsh-restart-action:hover { filter: brightness(1.06); }',
+    ].join('\n')
+
+    /** One control line: label (and hint) on the left, the control on the right. */
     function row(label, hint, control) {
-      return h('label', { className: 'dsh-restart-row' },
-        h('span', { className: 'dsh-restart-row-title' }, label),
-        hint === undefined ? null : h('span', { className: 'dsh-restart-row-hint' }, hint),
+      return h('div', { className: 'dsh-restart-row' },
+        h('span', { className: 'dsh-restart-row-text' },
+          h('span', { className: 'dsh-restart-row-title' }, label),
+          hint === undefined ? null : h('span', { className: 'dsh-restart-hint' }, hint),
+        ),
         control,
       )
     }
 
     /**
-     * The restart, in the application's Settings — the same options the popover has, where a user looks for
-     * them. Each change is sent on its own and the answer is the complete, validated settings object, so the
-     * page always shows what the Host will actually run with.
+     * The restart options, in the application's Settings.
+     *
+     * Three groups — how it quits, where the button lives, and the window — with the choices as segmented
+     * buttons and switches rather than dropdowns, so the current state is visible without opening anything. Every
+     * change is sent on its own and answered with the complete, validated settings, so the page always shows what
+     * will actually run.
      */
     function SettingsSection() {
       const [settings, setSettings] = React.useState(undefined)
       const [notice, setNotice] = React.useState('')
 
       React.useEffect(() => {
+        const style = document.createElement('style')
+        style.id = 'dsh-restart-settings-style'
+        style.textContent = SETTINGS_CSS
+        document.head.append(style)
         let cancelled = false
         request(`${PREFIX}/state`)
           .then((state) => { if (!cancelled) setSettings(state.settings ?? {}) })
           .catch(() => { if (!cancelled) setNotice(copy().failed) })
-        return () => { cancelled = true }
+        return () => {
+          cancelled = true
+          style.remove()
+        }
       }, [])
 
       const text = copy()
@@ -504,8 +561,8 @@ window.__ModuleLoader__.load({
           })
           setSettings(next)
           setNotice(text.saved)
-          // The caption button is another component and has to follow at once — and it disappears entirely
-          // when the user asks for Settings-only.
+          // The caption button is another component and has to follow at once — and it disappears entirely when
+          // the user asks for Settings-only.
           chromeSettings = next
           if (next.button === 'settings') chrome.unmount()
           else chrome.reposition()
@@ -514,38 +571,61 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const choice = (value, options, patch) => h('select', {
-        className: 'dsh-restart-select',
-        value,
-        onChange: (event) => void save(patch(event.target.value)),
-      }, options.map(([key, label]) => h('option', { key, value: key }, label)))
+      /** A choice the user can see at a glance, and change in one click. */
+      const segmented = (value, options, patch) => h('div', { className: 'dsh-restart-segmented', role: 'radiogroup' },
+        options.map(([key, label]) => h('button', {
+          key,
+          type: 'button',
+          role: 'radio',
+          'aria-checked': value === key ? 'true' : 'false',
+          className: value === key ? 'dsh-restart-segment is-active' : 'dsh-restart-segment',
+          onClick: () => { if (value !== key) void save(patch(key)) },
+        }, label)))
+
+      const toggle = (checked, patch) => h('button', {
+        type: 'button',
+        role: 'switch',
+        'aria-checked': checked ? 'true' : 'false',
+        className: checked ? 'dsh-restart-switch is-on' : 'dsh-restart-switch',
+        onClick: () => void save(patch(!checked)),
+      }, h('span', { className: 'dsh-restart-switch-knob' }))
+
+      const number = (value, step, patch) => h('span', { className: 'dsh-restart-field' },
+        h('input', {
+          className: 'dsh-restart-number',
+          type: 'number',
+          step,
+          value,
+          onChange: (event) => void save(patch(Number(event.target.value))),
+        }))
+
+      const group = (title, children) => h('div', { className: 'dsh-restart-group' },
+        h('span', { className: 'dsh-restart-group-title' }, title),
+        ...children)
 
       return h('section', { className: 'dsh-restart-page' },
         h('h2', { className: 'dsh-restart-title' }, text.settingsTitle),
         h('p', { className: 'dsh-restart-note' }, text.settingsIntro),
-        row(text.settingsQuit, settings.quit === 'graceful' ? text.quitGracefulHint : text.quitForceHint,
-          choice(settings.quit, [['graceful', text.quitGraceful], ['force', text.quitForce]], (value) => ({ quit: value }))),
-        row(text.settingsButton, undefined,
-          choice(settings.button, [['right', text.buttonRight], ['left', text.buttonLeft], ['settings', text.buttonSettings]], (value) => ({ button: value }))),
-        row(text.settingsOffset, text.settingsOffsetHint,
-          h('input', {
-            className: 'dsh-restart-number',
-            type: 'number',
-            step: 2,
-            value: settings.offset,
-            onChange: (event) => void save({ offset: Number(event.target.value) }),
-          })),
-        row(text.settingsWindow, undefined,
-          choice(settings.window, [['auto', text.windowAuto], ['always', text.windowAlways], ['report', text.windowReport]], (value) => ({ window: value }))),
-        row(text.settingsSettle, text.settingsSettleHint,
-          h('input', {
-            className: 'dsh-restart-number',
-            type: 'number',
-            min: 0,
-            step: 1,
-            value: Math.round(Number(settings.settleMs ?? 0) / 1000),
-            onChange: (event) => void save({ settleMs: Number(event.target.value) * 1000 }),
-          })),
+        group(text.groupQuit, [
+          segmented(settings.quit, [['graceful', text.quitGraceful], ['force', text.quitForce]], (value) => ({ quit: value })),
+          h('p', { className: 'dsh-restart-hint' }, settings.quit === 'graceful' ? text.quitGracefulHint : text.quitForceHint),
+        ]),
+        group(text.groupButton, [
+          row(text.settingsButton, undefined,
+            segmented(settings.button, [['right', text.buttonRight], ['left', text.buttonLeft], ['settings', text.buttonSettings]], (value) => ({ button: value }))),
+          row(text.settingsOffset, text.settingsOffsetHint,
+            h('span', { className: 'dsh-restart-field' },
+              number(settings.offset, 2, (value) => ({ offset: value })),
+              h('span', undefined, text.offsetUnit))),
+        ]),
+        group(text.groupWindow, [
+          row(text.settingsPageWait, settings.pageWait === true ? text.settingsPageWaitHint : text.pageWaitOffHint,
+            toggle(settings.pageWait === true, (value) => ({ pageWait: value }))),
+          row(text.settingsSettle, text.settingsSettleHint,
+            h('span', { className: 'dsh-restart-field' },
+              number(Math.round(Number(settings.settleMs ?? 0) / 1000), 1, (value) => ({ settleMs: value * 1000 })),
+              h('span', undefined, text.settleUnit))),
+        ]),
         h('div', { className: 'dsh-restart-actions' },
           h('button', {
             className: 'dsh-restart-action',
@@ -560,6 +640,7 @@ window.__ModuleLoader__.load({
             },
           }, text.restartNow),
           notice === '' ? null : h('span', { className: 'dsh-restart-note' }, notice),
+          h('span', { className: 'dsh-restart-hint' }, text.restartHint),
         ),
       )
     }

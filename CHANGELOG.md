@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-10-02
+
+The first stable release. The behaviour people liked in v0.1.0 is the default again, and the options finally
+look like options.
+
+### Added
+
+- **A rebuilt Settings page.** Three groups — how it quits, where the title-bar button lives, and the window —
+  with the choices as segmented buttons and a real switch instead of dropdowns, so the current state is visible
+  without opening anything; number fields carry their units; the restart action sits with a one-line warning
+  that a running turn is interrupted. The page styles itself and removes its stylesheet when it unmounts.
+
+### Changed
+
+- **v0.1.0's window behaviour is the default**: the window is asked for as soon as the app answers, and again
+  about every second until it is visible — no waiting for the page to render. The careful behaviour (wait for the
+  page, give the shell its moment) is one switch away: **Wait for the page before showing the window**.
+- **No settle lock by default** (`settleMs: 0`): a click a second after a restart works, as it did in v0.1.0,
+  instead of being answered with "the app is still starting". The guardian and the creation-time strays test
+  still stand behind that, so if such a click kills an app mid-boot, it still comes back.
+- Everything the earlier releases fixed is unchanged: the whole previous generation is closed and verified
+  (`quit.leftovers`), strays are identified by creation time rather than pid, our own scripts no longer run as the
+  application, the shell is closed before the host exits so no crash dialog appears, and the guardian starts the
+  app if the helper dies.
+
+[1.0.0]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v1.0.0
+
 ## [0.6.3] - 2026-10-02
 
 ### Changed

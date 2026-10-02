@@ -119,6 +119,8 @@ function helperEnvFor(appProbe, marker, flag, extra = {}) {
     DSH_RESTART_SETTLE_MS: String(SETTLE_MS),
     // The stand-in has no page, so nothing ever reports ready; keep the bounded wait short.
     DSH_RESTART_READY_MS: '150',
+    // The straggler scenario must not wait the production ten seconds for a stand-in that never leaves.
+    DSH_RESTART_GRACEFUL_MS: '300',
     PROBE_MARKER: marker,
     PROBE_FLAG: flag,
     ...extra,
