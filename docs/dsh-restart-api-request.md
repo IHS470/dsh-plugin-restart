@@ -88,3 +88,41 @@ started it again" and **"the app quit and came back"**, which is what people mea
 Nothing at runtime: no new startup work, one more IPC handler, and the code path it calls
 (`quitWithoutConfirmation` + `app.relaunch`) already runs from the tray menu. The origin check is the one
 already used for `directoryPick`, so a page outside the Desktop document cannot reach it.
+
+---
+
+## Addendum: a separate, very small request — a Restart item in the tray menu
+
+Independent of the plugin API above, this one is the shell's own UI.
+
+**Today** the tray context menu has exactly two items, defined in `DesktopTray.relabel()` (`lib/main.js:10853-10867`):
+Open Application, a separator, and Quit Application — no restart.
+
+**The shell already contains the action**, but only behind the development flag: the application-menu item at
+`lib/main.js:11899-11913` is `...development ? [{ reload }, { restartAppHostMenu: app.relaunch() +
+quitWithoutConfirmation() }] : []`, so a production build does not show it anywhere.
+
+**A plugin cannot add it**: the tray lives in the shell's main process (`new Tray`, `setContextMenu`); the host is
+plain Node without Electron APIs, and the renderer only gets the fixed `dshDesktop` surface (`browser`,
+`deviceInfo`, `shortcuts`, `updates`, `closeWindow`) — no Tray, no menus.
+
+**Suggested change** (three places, all in `lib/main.js`):
+
+1. Add to the tray template (before the separator at `10860`):
+
+```js
+  { label: messages.restartApplication, click: () => { this.options.restart(); } },
+```
+
+2. Pass it to `new DesktopTray({ ... })` (`11939-11948`):
+
+```js
+  restart: () => { if (quitting) return; app.relaunch(); quitWithoutConfirmation(); },
+```
+
+3. Copy: `restartApplication` already exists in the locale tables; `restartAppHostMenu` ("Restart App and Host")
+   is also available if the label should be more explicit.
+
+Besides the convenience, this is the path to a **genuinely clean quit**: it goes through `app.quit()` rather than
+a killed process, so Electron removes the tray icon itself — the answer to the recurring "why is the tray icon
+still there after a restart".
