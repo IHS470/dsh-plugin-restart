@@ -21,7 +21,7 @@
  */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -34,12 +34,8 @@ if (process.platform !== 'win32') {
 
 const HELPER = fileURLToPath(new URL('../lib/relaunch.mjs', import.meta.url))
 const root = mkdtempSync(join(tmpdir(), 'dsh-restart-relaunch-'))
-const logPath = join(root, 'relaunch.log')
-const lockPath = join(root, 'relaunch.lock')
-const appLogPath = join(root, 'app.log')
-const lastRunPath = join(root, 'last-run.json')
-const marker = join(root, 'marker.txt')
-const flag = join(root, 'flag.txt')
+// The stand-ins live at the root and are only ever read; everything a scenario writes lives in its
+// own directory under it (see `restart`).
 const probe = join(root, 'probe.mjs')
 const dyingProbe = join(root, 'dying-probe.mjs')
 const scriptPath = join(root, 'not-an-executable.cmd')
@@ -110,7 +106,7 @@ console.log('stub web port:', url)
 const POKE_GAPS = [120, 180, 240]
 
 /** The helper's environment, with the stand-in probe wired into whatever it launches. */
-function helperEnvFor(appProbe) {
+function helperEnvFor(appProbe, marker, flag) {
   const env = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
@@ -123,9 +119,25 @@ function helperEnvFor(appProbe) {
   return env
 }
 
-/** One full restart, and everything it left behind. */
+/**
+ * One full restart, and everything it left behind.
+ *
+ * Every scenario writes into a directory of its own. They used to share one, and that is how this
+ * harness failed on a Windows runner: the app stand-in keeps `app.log` open for a few seconds, so
+ * deleting the shared directory raced it (ENOTEMPTY) — and a scenario could read the previous one's
+ * marker while its probe was still alive. Per-scenario directories make that impossible instead of
+ * unlikely.
+ */
 async function restart(name, { appExe = process.execPath, appProbe = probe, hostExits = true, withUrl = true, legacy = false } = {}) {
-  for (const file of [marker, logPath, lockPath, appLogPath, lastRunPath, flag]) rmSync(file, { force: true })
+  const dir = join(root, name.replace(/[^a-z0-9]+/gi, '-').toLowerCase())
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  const logPath = join(dir, 'relaunch.log')
+  const lockPath = join(dir, 'relaunch.lock')
+  const appLogPath = join(dir, 'app.log')
+  const lastRunPath = join(dir, 'last-run.json')
+  const marker = join(dir, 'marker.txt')
+  const flag = join(dir, 'flag.txt')
   const shell = ping(60)
   const host = ping(hostExits ? 2 : 60)
   await sleep(400)
@@ -143,7 +155,7 @@ async function restart(name, { appExe = process.execPath, appProbe = probe, host
     args.push(`--lock=${lockPath}`)
   }
   const started = Date.now()
-  const helper = spawn(process.execPath, args, { stdio: 'ignore', env: helperEnvFor(appProbe) })
+  const helper = spawn(process.execPath, args, { stdio: 'ignore', env: helperEnvFor(appProbe, marker, flag) })
   const code = await new Promise((resolve) => helper.once('close', resolve))
   // The last poke is fired just before the helper exits; the probe appends a moment later.
   await sleep(1500)
@@ -156,7 +168,11 @@ async function restart(name, { appExe = process.execPath, appProbe = probe, host
   const shellAlive = alive(shell.pid)
   const hostAlive = alive(host.pid)
   for (const child of [shell, host]) if (alive(child.pid)) child.kill()
-  return { name, code, log, summary, launches, elapsed, shellPid: shell.pid, hostPid: host.pid, shellAlive, hostAlive }
+  return {
+    name, code, log, summary, launches, elapsed,
+    shellPid: shell.pid, hostPid: host.pid, shellAlive, hostAlive,
+    lockPath, appLogPath, marker, appLog: read(appLogPath),
+  }
 }
 
 // --- 1. the ordinary restart --------------------------------------------------
@@ -172,10 +188,10 @@ assert.equal(ordinary.summary.appExit, null, 'the app never exited')
 assert.ok(ordinary.summary.ms.appStarted > ordinary.summary.ms.shellGone, 'the app starts after the shell is gone')
 assert.ok(ordinary.summary.ms.appUp > ordinary.summary.ms.appStarted, 'and it answers after it was started')
 assert.ok(ordinary.summary.ms.total < 6000, `the whole restart is quick (${ordinary.summary.ms.total}ms)`)
-assert.equal(existsSync(lockPath), false, 'the lock is released when the helper is done')
-assert.ok(read(appLogPath).includes('probe-stdout'), "the app's own output was captured")
-assert.ok(!/node=1/.test(read(marker)), `ELECTRON_RUN_AS_NODE never reaches the app (${JSON.stringify(ordinary.launches)})`)
-assert.match(read(marker), /^run node=$/m, 'and the marker records the app it started, with that variable gone')
+assert.equal(existsSync(ordinary.lockPath), false, 'the lock is released when the helper is done')
+assert.ok(ordinary.appLog.includes('probe-stdout'), "the app's own output was captured")
+assert.ok(!/node=1/.test(read(ordinary.marker)), `ELECTRON_RUN_AS_NODE never reaches the app (${JSON.stringify(ordinary.launches)})`)
+assert.match(read(ordinary.marker), /^run node=$/m, 'and the marker records the app it started, with that variable gone')
 assert.ok(!/taskkill.*\/T/.test(ordinary.log), 'no kill uses /T')
 // The app is launched before the old host is even looked at, so by then it has usually left on its
 // own — which is the point: that wait used to sit on the user's clock.
@@ -210,7 +226,7 @@ console.log('3 no web address: waited out a boot and poked three times')
 const legacy = await restart('positional arguments from an older Host', { legacy: true })
 assert.equal(legacy.summary.ok, true, 'the older argument form still restarts')
 assert.equal(legacy.summary.answered, true, 'and still finds the app')
-assert.ok(!legacy.log.includes(`web=${lockPath}`), 'the lock path is never mistaken for the web address')
+assert.ok(!legacy.log.includes(`web=${legacy.lockPath}`), 'the lock path is never mistaken for the web address')
 console.log('3b positional arguments: parsed as the older Host meant them')
 
 // --- 4. the executable is missing, or is not an executable ---------------------
@@ -221,8 +237,8 @@ assert.equal(missing.shellAlive, true, 'the shell was NOT closed — it cannot b
 assert.ok(/missing or not an executable image/.test(missing.log), 'and the log says why')
 assert.equal(missing.summary.ok, false, 'the restart is recorded as failed')
 assert.equal(missing.summary.attempts, 0, 'nothing was launched')
-assert.equal(existsSync(lockPath), false, 'the lock does not stay behind to wedge the next attempt')
-assert.equal(existsSync(marker), false, 'no app was started')
+assert.equal(existsSync(missing.lockPath), false, 'the lock does not stay behind to wedge the next attempt')
+assert.equal(existsSync(missing.marker), false, 'no app was started')
 
 // A `.cmd` cannot be started by `spawn` at all, so it must be refused before the shell is closed —
 // otherwise the restart would close the app and then fail to bring it back.
@@ -250,5 +266,5 @@ console.log('        cannot restart, launches the app without ELECTRON_RUN_AS_NO
 console.log('        race, captures the app output, raises the window, and never uses /T')
 
 server.close()
-rmSync(root, { recursive: true, force: true })
+try { rmSync(root, { recursive: true, force: true }) } catch {}
 process.exit(0)
