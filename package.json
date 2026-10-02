@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-restart",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Portable restart button for the DeepSeek Harness desktop app: one click closes the shell and the app comes back with its window in front. 装在 DSH 窗口标题栏里的便携重启按钮。",
   "type": "module",
   "license": "MIT",

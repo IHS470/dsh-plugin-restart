@@ -4,6 +4,53 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-10-02
+
+The restart is a feature in Settings now, with options you can change — and it closes the application the
+way you asked for, not the way that happened to be fastest.
+
+### Added
+
+- **A Restart section in Settings** (`settings.section`, id `dsh-restart`), built the way
+  `dsh-voice-live` builds its own: every option below, plus a **Restart now** button. Each change is sent
+  on its own and answered with the complete settings the Host will actually run with. React is loaded
+  **optionally** — if the page cannot offer it the section is simply not registered and the caption button
+  behaves as before, because a Settings page must never be able to break the restart itself.
+- **Settings storage**: `$DSH_HOME/dsh-plugin-restart/settings.json` behind `GET`/`POST
+  /dsh-restart/settings`. Every value is validated in one place (`lib/settings.mjs`); an unrecognised one
+  falls back to what was already there, so a typo cannot wedge a restart.
+- **Two ways to quit, chosen in Settings**:
+  - **graceful** (default): the host exits cleanly first, then the shell is closed, then the whole previous
+    generation gets **ten seconds** to leave on its own. Only what refuses is closed, and the summary says
+    `escalated: true` when that happens.
+  - **force**: the whole process tree is closed at once.
+  Both report what they actually did: `last-run.json` gained
+  `quit: { mode, waitedMs, killed, escalated, leftovers }`.
+- **Three button positions** — right of the caption buttons, left of them, or **Settings only** — plus a
+  pixel **offset** that works on either side. The left side reuses the same `right` value the stylesheet
+  already had, so no stylesheet had to learn about it.
+- `docs/dsh-restart-api-request.md`: what DSH would have to expose for a truly graceful quit, with file
+  and line references, so this mode can one day be the shell's own quit instead of an orderly teardown.
+
+### Changed
+
+- `DSH_RESTART_RAISE` is now the fallback for the `window` setting (auto / always / report), and
+  `DSH_RESTART_SETTLE_MS` for `settleMs`; the quit mode, the window check and the settle time all arrive
+  from the Host as flags.
+- The window check, the strays test (creation time, never pid) and the guardian are behaviourally unchanged:
+  they are what 0.4.1 and 0.4.2 fixed, and their tests still run.
+
+### Known limits
+
+This shell exposes no quit or restart command to plugins: its own graceful path is the tray menu's
+"Restart App and Host" (`lib/main.js`: `restartAppHostMenu`, `quitWithoutConfirmation()` to
+`app.quit()`), and `background-close-confirmed` means the opposite of a quit — it is what lets a window
+close become a silent "hide in the tray". So `graceful` here is the most orderly path a plugin can drive,
+not the shell's own `app.quit()`; and a hard-killed app can leave a Windows ghost tray icon until the
+pointer passes over it. Both are stated in the README rather than hidden.
+
+[0.5.0]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.5.0
+
 ## [0.4.2] - 2026-10-02
 
 ### Fixed

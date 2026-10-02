@@ -119,6 +119,23 @@ helper arguments (`--host=` / `--web=` / `--lock=`) that still accept the previo
 helper is read from disk at spawn time, so the first restart after an update really does run an older host
 against a newer helper.
 
+## Settings
+
+A **Restart** section in the application Settings page (`settings.section`, built the way `dsh-voice-live` builds its own). Every change applies at once and the Host answers with the complete, validated settings, so what the page shows is always what will run. React is loaded *optionally*: without it the section is simply not registered and the caption button behaves as before — **a Settings page must never be able to break the restart itself**.
+
+| Setting | Options | What it does |
+|---|---|---|
+| **How it quits** | **Graceful (default)** / Force | Graceful: the host exits cleanly, the shell closes, then the whole previous generation gets **ten seconds** to leave on its own; only what refuses is closed, and `last-run.json` records **`escalated: true`**. Force: the whole tree is closed at once. |
+| **Button position** | Right of the caption / Left of it / **Settings only** | All three are really wired into the caption placement, not merely stored; Settings-only **unmounts** the button. |
+| **Button offset** | pixels, either sign | Works on both sides: positive moves it away from the window corner. The left side reuses the same `right` value, so no stylesheet changed. |
+| **Window check** | Automatic (raise only when missing) / Always / Report only | 0.4.2 check as a choice; Report-only touches nothing and records what it found. |
+| **Settle** | seconds (default 6) | How long the lock is held after the app is up, so a second click cannot kill it mid-boot. |
+| **Restart now** | button | Restart from Settings instead of the title bar. |
+
+Settings live in `$DSH_HOME/dsh-plugin-restart/settings.json` behind `GET`/`POST /dsh-restart/settings`, validated in one place (`lib/settings.mjs`); an unrecognised value falls back to what was already there.
+
+**One limit, stated plainly**: this shell exposes no quit or restart command to plugins. Its own graceful path is the tray menu item "Restart App and Host" (`lib/main.js`: `restartAppHostMenu`, `quitWithoutConfirmation()` to `app.quit()`), and `background-close-confirmed` means the *opposite* of a quit — it is what lets a window close become a silent hide in the tray. So graceful here is the most orderly path a plugin can drive, not the shell own `app.quit()`; and a hard-killed app can leave a Windows ghost tray icon until the pointer passes over it. A truly graceful quit needs one channel from DSH — the exact change, with file and line references, is in [`docs/dsh-restart-api-request.md`](docs/dsh-restart-api-request.md).
+
 ## Diagnostics
 
 Everything lives in `$DSH_HOME/dsh-plugin-restart/`:

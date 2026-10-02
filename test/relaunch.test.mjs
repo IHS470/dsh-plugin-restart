@@ -324,16 +324,19 @@ const straggler = await restart('a straggler survives the shell', {
   stray: true,
   // Long enough that both the straggler and the app the helper starts are still running when the
   // harness looks: the point of the scenario is which of the two the helper closes.
-  extraEnv: { PROBE_LIFE_MS: '20000' },
+  // Long enough to outlive the graceful wait (ten seconds) plus everything after it: the app the helper
+  // starts must still be running when the harness asks whether it survived.
+  extraEnv: { PROBE_LIFE_MS: '60000' },
 })
 assert.equal(straggler.summary.ok, true, 'the restart still succeeded')
 assert.ok(straggler.summary.straysClosed >= 1, `the straggler was closed (${straggler.summary.straysClosed})`)
-assert.ok(/stray app process: closing pid/.test(straggler.log), 'and it is named in the log')
+// The wording follows the setting that was in force: graceful names what would not leave on its own.
+assert.ok(/closing a process that would not leave|quit \(force\): closing pid/.test(straggler.log), 'and it is named in the log')
 assert.equal(straggler.stragglerAlive, false, 'the straggler is gone by the time the harness looks')
 // The regression 0.4.0 shipped: a pid snapshot taken before the launch contained the pid the operating
 // system then handed to the new app, so the helper closed the app it had just started.
 assert.equal(straggler.appAliveAtEnd, true, 'and the app the helper launched was NOT mistaken for a straggler')
-const strayAt = straggler.log.search(/stray app process: closing pid/)
+const strayAt = straggler.log.search(/closing a process that would not leave|quit \(force\): closing pid/)
 assert.ok(strayAt > 0 && straggler.log.search(/launch attempt 1/) < strayAt, 'the app is started first and the straggler is cleared while it boots')
 console.log(`6 straggler: cleared while the app boots (straysClosed=${straggler.summary.straysClosed})`)
 // --- 7. the strays test itself -------------------------------------------------

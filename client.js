@@ -18,6 +18,27 @@ window.__ModuleLoader__.load({
   factory: () => {
     const module = { exports: {} }
     const exports = module.exports
+
+    /**
+     * React, if this page's loader offers it.
+     *
+     * Only the Settings section needs it, and the caption-band button must never depend on it: when
+     * `require('react')` is unavailable the section is simply not registered and everything else behaves
+     * exactly as it did before.
+     */
+    let React
+    try {
+      React = require('react')
+    } catch {
+      React = undefined
+    }
+    const h = React === undefined ? undefined : React.createElement
+
+    /** The settings in force, once they have been read; the chrome reads this to place itself. */
+    let chromeStateRequest
+    let chromeSettings
+    /** How the mounted chrome re-places or removes itself when a setting changes. */
+    const chrome = { reposition: () => {}, unmount: () => {} }
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
     const PREFIX = '/dsh-restart'
@@ -38,6 +59,28 @@ window.__ModuleLoader__.load({
       cancel: '取消',
       pending: '正在重启…',
       busy: '已经在重启了，请稍候…',
+      settingsTitle: '重启',
+      settingsIntro: '关闭应用并重新启动它。',
+      settingsQuit: '退出方式',
+      quitGraceful: '正常退出（推荐）',
+      quitForce: '强制退出',
+      quitGracefulHint: '先让 Host 自己干净退出，再关壳，然后给整代进程最多 10 秒自己退干净；赖着不走的才补杀，日志里记 escalated=true。',
+      quitForceHint: '一次性把整棵进程树关掉：最快，但托盘图标可能留到鼠标划过（Windows 的幽灵图标）。',
+      settingsButton: '按钮位置',
+      buttonRight: '标题栏右侧',
+      buttonLeft: '标题栏左侧',
+      buttonSettings: '只在设置里',
+      settingsOffset: '按钮偏移（像素）',
+      settingsOffsetHint: '两侧都可用：正数远离窗口角落，负数靠近。',
+      settingsWindow: '窗口核验',
+      windowAuto: '自动（缺窗口才抬）',
+      windowAlways: '每次都抬',
+      windowReport: '只报告',
+      settingsSettle: '稳定等待（秒）',
+      settingsSettleHint: '应用起来后锁握多久，防止紧接着的第二次重启把它杀在启动中。',
+      restartNow: '立即重启',
+      settingsLoading: '正在读取设置…',
+      restarted: '已请求重启。',
       settling: '刚重启过：应用还在启动，请等它起来再试。',
       settlingSoon: '刚重启过：应用还在启动，约 {n} 秒后再试。',
       stalled: '重启似乎没有生效，请再试一次或手动重启',
@@ -52,6 +95,28 @@ window.__ModuleLoader__.load({
       cancel: 'Cancel',
       pending: 'Restarting…',
       busy: 'A restart is already in progress…',
+      settingsTitle: 'Restart',
+      settingsIntro: 'Close this application and start it again.',
+      settingsQuit: 'How it quits',
+      quitGraceful: 'Graceful (recommended)',
+      quitForce: 'Force',
+      quitGracefulHint: 'The host exits cleanly, then the shell closes, then the whole generation gets up to ten seconds to leave on its own; only what refuses is closed, and the log records escalated=true.',
+      quitForceHint: 'Closes the whole process tree at once: fastest, but Windows may keep a ghost tray icon until the pointer passes over it.',
+      settingsButton: 'Button position',
+      buttonRight: 'Right of the caption',
+      buttonLeft: 'Left of the caption',
+      buttonSettings: 'Settings only',
+      settingsOffset: 'Button offset (px)',
+      settingsOffsetHint: 'Either side: positive moves it away from the window corner, negative towards it.',
+      settingsWindow: 'Window check',
+      windowAuto: 'Automatic (raise only when missing)',
+      windowAlways: 'Always raise',
+      windowReport: 'Report only',
+      settingsSettle: 'Settle (seconds)',
+      settingsSettleHint: 'How long the lock is held after the app is up, so a second click cannot kill it mid-boot.',
+      restartNow: 'Restart now',
+      settingsLoading: 'Reading settings…',
+      restarted: 'Restart requested.',
       settling: 'Just restarted: the app is still starting — try again once it is up.',
       settlingSoon: 'Just restarted: the app is still starting — try again in about {n}s.',
       stalled: 'The restart did not take effect — try again or restart manually',
@@ -217,14 +282,31 @@ window.__ModuleLoader__.load({
       }
 
       /** Keep clear of the caption buttons, and match the band the frame reserves. */
+      placeChrome = place
+
       function place() {
         let right = 138
-        if (overlay && typeof overlay.getTitlebarAreaRect === 'function') {
-          const rect = overlay.getTitlebarAreaRect()
-          if (rect && rect.width > 0) right = Math.max(0, Math.round(window.innerWidth - rect.right))
-        }
-        const root = document.documentElement.style
-        root.setProperty('--dsh-restart-right', `${right + 4}px`)
+          let left = 12
+          if (overlay && typeof overlay.getTitlebarAreaRect === 'function') {
+            const rect = overlay.getTitlebarAreaRect()
+            if (rect && rect.width > 0) {
+              right = Math.max(0, Math.round(window.innerWidth - rect.right))
+              left = Math.max(0, Math.round(Number(rect.left) || 0))
+            }
+          }
+          // Where the user asked for the button: either side of the caption band, moved by their offset. The
+          // left side is expressed through the same `right` the stylesheet already uses, so no stylesheet has
+          // to know about it: put the button's left edge at `left`, which is that far from the right once the
+          // button's own width is subtracted. Width comes from the mounted button, defaulting to the sheet's.
+          const wanted = chromeSettings ?? {}
+          const offset = Number.isFinite(Number(wanted.offset)) ? Math.round(Number(wanted.offset)) : 0
+          const root = document.documentElement.style
+          if (wanted.button === 'left') {
+            const width = Math.round(Number(button.getBoundingClientRect?.().width) || 34)
+            root.setProperty('--dsh-restart-right', `${Math.max(8, window.innerWidth - left - offset - width)}px`)
+          } else {
+            root.setProperty('--dsh-restart-right', `${right + 4 + offset}px`)
+          }
         const line = Number.parseFloat(
           getComputedStyle(document.documentElement).getPropertyValue('--dsh-windows-titlebar-height'),
         )
@@ -251,7 +333,8 @@ window.__ModuleLoader__.load({
       async function capability() {
         if (ready !== undefined) return ready
         try {
-          const state = await request(`${PREFIX}/state`)
+          // The chrome already asked for this when it mounted; awaiting that answer avoids asking twice.
+          const state = chromeStateRequest !== undefined ? await chromeStateRequest : await request(`${PREFIX}/state`)
           ready = !(state && state.restart) || state.restart.available === true
         } catch {
           ready = true   // let the click itself report a route that is not there
@@ -378,11 +461,128 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** One labelled control in the Settings section. */
+    function row(label, hint, control) {
+      return h('label', { className: 'dsh-restart-row' },
+        h('span', { className: 'dsh-restart-row-title' }, label),
+        hint === undefined ? null : h('span', { className: 'dsh-restart-row-hint' }, hint),
+        control,
+      )
+    }
+
+    /**
+     * The restart, in the application's Settings — the same options the popover has, where a user looks for
+     * them. Each change is sent on its own and the answer is the complete, validated settings object, so the
+     * page always shows what the Host will actually run with.
+     */
+    function SettingsSection() {
+      const [settings, setSettings] = React.useState(undefined)
+      const [notice, setNotice] = React.useState('')
+
+      React.useEffect(() => {
+        let cancelled = false
+        request(`${PREFIX}/state`)
+          .then((state) => { if (!cancelled) setSettings(state.settings ?? {}) })
+          .catch(() => { if (!cancelled) setNotice(copy().failed) })
+        return () => { cancelled = true }
+      }, [])
+
+      const text = copy()
+      if (settings === undefined) {
+        return h('section', { className: 'dsh-restart-page' },
+          h('h2', { className: 'dsh-restart-title' }, text.settingsTitle),
+          h('p', { className: 'dsh-restart-note' }, text.settingsLoading),
+        )
+      }
+
+      async function save(patch) {
+        try {
+          const next = await request(`${PREFIX}/settings`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(patch),
+          })
+          setSettings(next)
+          setNotice(text.saved)
+          // The caption button is another component and has to follow at once — and it disappears entirely
+          // when the user asks for Settings-only.
+          chromeSettings = next
+          if (next.button === 'settings') chrome.unmount()
+          else chrome.reposition()
+        } catch {
+          setNotice(text.failed)
+        }
+      }
+
+      const choice = (value, options, patch) => h('select', {
+        className: 'dsh-restart-select',
+        value,
+        onChange: (event) => void save(patch(event.target.value)),
+      }, options.map(([key, label]) => h('option', { key, value: key }, label)))
+
+      return h('section', { className: 'dsh-restart-page' },
+        h('h2', { className: 'dsh-restart-title' }, text.settingsTitle),
+        h('p', { className: 'dsh-restart-note' }, text.settingsIntro),
+        row(text.settingsQuit, settings.quit === 'graceful' ? text.quitGracefulHint : text.quitForceHint,
+          choice(settings.quit, [['graceful', text.quitGraceful], ['force', text.quitForce]], (value) => ({ quit: value }))),
+        row(text.settingsButton, undefined,
+          choice(settings.button, [['right', text.buttonRight], ['left', text.buttonLeft], ['settings', text.buttonSettings]], (value) => ({ button: value }))),
+        row(text.settingsOffset, text.settingsOffsetHint,
+          h('input', {
+            className: 'dsh-restart-number',
+            type: 'number',
+            step: 2,
+            value: settings.offset,
+            onChange: (event) => void save({ offset: Number(event.target.value) }),
+          })),
+        row(text.settingsWindow, undefined,
+          choice(settings.window, [['auto', text.windowAuto], ['always', text.windowAlways], ['report', text.windowReport]], (value) => ({ window: value }))),
+        row(text.settingsSettle, text.settingsSettleHint,
+          h('input', {
+            className: 'dsh-restart-number',
+            type: 'number',
+            min: 0,
+            step: 1,
+            value: Math.round(Number(settings.settleMs ?? 0) / 1000),
+            onChange: (event) => void save({ settleMs: Number(event.target.value) * 1000 }),
+          })),
+        h('div', { className: 'dsh-restart-actions' },
+          h('button', {
+            className: 'dsh-restart-action',
+            type: 'button',
+            onClick: async () => {
+              try {
+                const result = await request(`${PREFIX}/restart`, { method: 'POST' })
+                setNotice(result && result.ok === false ? text.failed : text.restarted)
+              } catch {
+                setNotice(text.failed)
+              }
+            },
+          }, text.restartNow),
+          notice === '' ? null : h('span', { className: 'dsh-restart-note' }, notice),
+        ),
+      )
+    }
+
+    /** Re-run the mounted button's placement, if there is one. */
+    let placeChrome = () => {}
+
     /** Nothing is injected: the button is chrome, not a slot entry. */
     const inject = []
 
     function apply(ctx) {
-      ctx.effect(() => {
+        if (React !== undefined && h !== undefined && ctx.slots !== undefined) {
+          // The Settings page, where a user looks for a restart; the caption button stays the quick way.
+          ctx.slots.inject?.('settings.section', () => ctx.slots.register({
+            name: 'settings.section',
+            id: 'dsh-restart',
+            order: 64,
+            label: () => copy().settingsTitle,
+            inject: () => ({}),
+          }, SettingsSection))
+        }
+
+        ctx.effect(() => {
         // Overlay windows only. A window whose overlay reports itself invisible has no caption
         // band to sit in (full screen), so nothing is mounted. A window that does not report an
         // overlay at all still gets the button: a missing API is not evidence that the band is
@@ -390,9 +590,21 @@ window.__ModuleLoader__.load({
         const overlay = navigator.windowControlsOverlay
         if (overlay !== undefined && overlay.visible === false) return () => {}
         ensureStyle()
-        const unmount = mountRestartButton()
-        return () => {
-          unmount()
+          let unmount = mountRestartButton()
+          chrome.unmount = () => { unmount(); unmount = () => {} }
+          chrome.reposition = () => placeChrome()
+          // Placement needs the settings, which are read once in the background: until that answer arrives the
+          // button sits where it always did, then moves — or goes away — a moment later.
+          chromeStateRequest = request(`${PREFIX}/state`)
+          chromeStateRequest
+            .then((state) => {
+              chromeSettings = state.settings ?? {}
+              if (chromeSettings.button === 'settings') chrome.unmount()
+              else placeChrome()
+            })
+            .catch(() => {})
+          return () => {
+            unmount()
           if (styleElement && styleElement.isConnected) styleElement.remove()
           styleElement = null
         }
