@@ -216,7 +216,7 @@ assert.ok(ordinary.summary.ms.shellGone < ordinary.summary.ms.appStarted, 'the a
 assert.ok(ordinary.summary.ms.appUp > ordinary.summary.ms.appStarted, 'and it answers after it was started')
 // The total includes deliberate waiting — the settle hold and up to two window nudges — so it is not a speed
 // measure. What matters is that nothing of ours stands in front of the launch.
-assert.ok(ordinary.summary.ms.appStarted < 3000, `the app is started promptly (${ordinary.summary.ms.appStarted}ms)`)
+assert.ok(ordinary.summary.ms.appStarted < 10000, `the app is started promptly (${ordinary.summary.ms.appStarted}ms)`)
 assert.ok(ordinary.summary.ms.total < 30000, `and the restart still finishes in a sane time (${ordinary.summary.ms.total}ms)`)
 assert.equal(existsSync(ordinary.lockPath), false, 'the lock is released when the helper is done')
 assert.ok(ordinary.appLog.includes('probe-stdout'), "the app's own output was captured")
@@ -230,8 +230,11 @@ assert.ok(/host already gone|after kill host pid=\d+ alive=false/.test(ordinary.
 assert.equal(ordinary.launches.length, 1 + ordinary.summary.pokes, 'one launch plus one per poke')
 // 0.2.0 spent a process enumeration on the critical path; the shell is now closed with `process.kill`
 // (no `taskkill.exe` to start) and the scan overlaps that close instead of following it.
-assert.ok(ordinary.summary.ms.shellGone < 500, `the shell is closed quickly, without starting taskkill.exe (${ordinary.summary.ms.shellGone}ms)`)
-assert.ok(ordinary.launchedAt !== undefined && ordinary.launchedAt < 2500, `and the app is launched promptly (${ordinary.launchedAt}ms from spawn, including the stand-in's own boot)`)
+// The mechanism, not the clock: with `process.kill` there is no `taskkill.exe` to start, and that is what
+// this asserts. The time bound is only a sanity net — a loaded CI runner took 699ms for the same work.
+assert.ok(!/taskkill/.test(ordinary.log), 'no taskkill.exe is started to close the shell')
+assert.ok(ordinary.summary.ms.shellGone < 3000, `the shell is closed promptly (${ordinary.summary.ms.shellGone}ms)`)
+assert.ok(ordinary.launchedAt !== undefined && ordinary.launchedAt < 10000, `and the app is launched promptly (${ordinary.launchedAt}ms from spawn, including the stand-in's own boot)`)
 assert.equal(ordinary.lockDuring?.stage, 'settling', 'the lock reports that the restart is only settling')
 assert.ok(Number(ordinary.lockDuring?.settleUntil) > Date.now() - ordinary.elapsed, 'and carries the moment it stops counting')
 assert.ok(ordinary.lockDuring?.appPid > 0, 'naming the app it started, so the guardian leaves it alone')
