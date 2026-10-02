@@ -102,7 +102,7 @@ DSH 桌面壳把 Host 跑成**普通 Node 子进程**（`dsh-desktop-host`），
 
 设置存在 `$DSH_HOME/dsh-plugin-restart/settings.json`，通过 `GET`/`POST /dsh-restart/settings` 读写；所有值在 `lib/settings.mjs` 里一处校验，认不出的值退回原值——拼错一个词不该让重启失灵。
 
-**一句必须说清的边界**：这个壳**没有给插件留退出/重启接口**。它自己的优雅退出是托盘菜单里的 "Restart App and Host"（`lib/main.js`：`restartAppHostMenu`、`quitWithoutConfirmation()` → `app.quit()`），而 `background-close-confirmed` 标记的含义**正好相反**——它让"关闭窗口"被**静默地**变成"藏进托盘"。所以这里的"正常退出"是**插件能驱动的最有序路径**，不是壳自己的 `app.quit()`；被硬杀的应用也可能在 Windows 通知区留下幽灵图标，直到鼠标划过。要 100% 的优雅退出，需要 DSH 暴露一个通道——具体改法与行号见 [`docs/dsh-restart-api-request.md`](docs/dsh-restart-api-request.md)。
+**一句必须说清的边界**：这个壳**没有给插件留退出/重启接口**。它自己的优雅退出是托盘菜单里的 "Restart App and Host"（`lib/main.js`：`restartAppHostMenu`、`quitWithoutConfirmation()` → `app.quit()`），而 `background-close-confirmed` 标记的含义**正好相反**——它让"关闭窗口"被**静默地**变成"藏进托盘"。所以这里的"正常退出"是**插件能驱动的最有序路径**，不是壳自己的 `app.quit()`；被硬杀的应用也可能在 Windows 通知区留下幽灵图标，直到鼠标划过。要 100% 的优雅退出，需要 DSH 暴露一个通道——具体改法与行号见 [`docs/dsh-restart-api-request.zh.md`](docs/dsh-restart-api-request.zh.md)（中文，可直接转给 DSH；英文版是 [`docs/dsh-restart-api-request.md`](docs/dsh-restart-api-request.md)）。
 
 ## 诊断
 
