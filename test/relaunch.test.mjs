@@ -214,7 +214,10 @@ assert.equal(ordinary.summary.straysClosed, 0, 'there was nothing of a previous 
 assert.equal(ordinary.summary.appExit, null, 'the app never exited')
 assert.ok(ordinary.summary.ms.shellGone < ordinary.summary.ms.appStarted, 'the app starts after the shell is gone')
 assert.ok(ordinary.summary.ms.appUp > ordinary.summary.ms.appStarted, 'and it answers after it was started')
-assert.ok(ordinary.summary.ms.total < 8000, `the whole restart is quick (${ordinary.summary.ms.total}ms)`)
+// The total includes deliberate waiting — the settle hold and up to two window nudges — so it is not a speed
+// measure. What matters is that nothing of ours stands in front of the launch.
+assert.ok(ordinary.summary.ms.appStarted < 3000, `the app is started promptly (${ordinary.summary.ms.appStarted}ms)`)
+assert.ok(ordinary.summary.ms.total < 30000, `and the restart still finishes in a sane time (${ordinary.summary.ms.total}ms)`)
 assert.equal(existsSync(ordinary.lockPath), false, 'the lock is released when the helper is done')
 assert.ok(ordinary.appLog.includes('probe-stdout'), "the app's own output was captured")
 assert.ok(!/node=1/.test(read(ordinary.marker)), `ELECTRON_RUN_AS_NODE never reaches the app (${JSON.stringify(ordinary.launches)})`)
