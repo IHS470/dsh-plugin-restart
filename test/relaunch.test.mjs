@@ -95,7 +95,19 @@ const alive = (pid) => {
 }
 const ping = (seconds) => spawn('cmd.exe', ['/c', `ping -n ${seconds} 127.0.0.1 >nul`], { stdio: 'ignore', windowsHide: true })
 const read = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : '')
-const readJson = (file) => (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : undefined)
+/**
+ * A JSON file the helper may be writing at this very moment reads as "nothing yet" instead of crashing the
+ * harness: the writes truncate before they fill, so a reader can legitimately see an empty file. This cost a
+ * CI job once — the helper had done nothing wrong.
+ */
+const readJson = (file) => {
+  if (!existsSync(file)) return undefined
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return undefined
+  }
+}
 
 // A stub web port: any answer counts as "the app is up", exactly like the real 401.
 const server = http.createServer((_request, response) => {
