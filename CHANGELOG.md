@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-10-02
+
+### Changed
+
+- **The window is given a moment to appear on its own before the shell is asked to show it.** The nudge is a
+  second Electron start, and it was happening while the page was still settling — competing for exactly the
+  resources the page needed to finish. Measured on the machine this was reported from: the app starts at
+  **0.13 s**, serves its port at **2.35 s**, and the window first became visible at **6.06 s** — with the nudge
+  in the middle of that last stretch. The helper now waits one check interval after the page reports ready,
+  looks again, and only asks the shell if the window is *still* missing. A restart that needs no nudge logs
+  `the window appeared on its own; no nudge needed`, reports `pokes: 0`, and should bring `windowVisibleMs`
+  down from ~6 s to ~3 s.
+- Nothing else changed: what is in front of the launch is still nothing (the click-to-launch path is the same
+  0.13 s), and the app's own boot remains the floor — a plugin cannot start it faster than it starts.
+
+[0.6.3]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.6.3
+
 ## [0.6.2] - 2026-10-02
 
 ### Fixed
