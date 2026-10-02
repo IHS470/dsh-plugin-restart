@@ -69,13 +69,16 @@ function boot(fetchImpl, { overlayVisible = true } = {}) {
   const body = makeElement('body')
   const rootStyle = { values: {}, setProperty(name, value) { this.values[name] = value } }
   const head = makeElement('head')
+  // The document keeps its listeners, so the harness can drive the real keydown handler.
+  const documentListeners = new Map()
   const documentStub = {
     documentElement: { getAttribute: () => 'zh', setAttribute() {}, removeAttribute() {}, style: rootStyle },
     head,
     body,
     createElement: (type) => makeElement(type),
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener(name, handler) { documentListeners.set(name, handler) },
+    removeEventListener(name) { documentListeners.delete(name) },
+    dispatch(name, event) { documentListeners.get(name)?.(event ?? {}) },
   }
   const overlay = {
     visible: overlayVisible,
@@ -94,7 +97,7 @@ function boot(fetchImpl, { overlayVisible = true } = {}) {
 
   const disposers = []
   captured.module.apply({ effect: (fn) => { disposers.push(fn()) } })
-  return { module: captured.module, body, head, overlay, rootStyle, windowStub, disposers }
+  return { module: captured.module, body, head, overlay, rootStyle, windowStub, disposers, document: documentStub }
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 20))
@@ -170,27 +173,72 @@ assert.equal(note(c).textContent, '正在重启…', 'and the popover says so wh
 await flush()
 assert.equal(c.windowStub.closed, false, 'the window is never closed: the desktop shell turns a close into "hide in the tray" and it releases nothing')
 assert.equal(popover(c).hidden, false, 'so the restart notice stays on screen')
-// The popover has an auto-close timer; a restart must outlive it, because this line is the only
-// feedback the user gets while the app is going away.
-await new Promise((resolve) => setTimeout(resolve, 8300))
+
+// If the app never goes away, this page is still here to say so — a notice that spins forever is
+// worse than one that admits it. The popover's own auto-close must not win either race.
+await new Promise((resolve) => setTimeout(resolve, 5300))
+assert.equal(note(c).textContent, '重启似乎没有生效，请再试一次或手动重启', 'a restart that does not take effect says so')
+assert.equal(popover(c).hidden, false, 'and the popover is still there to read it in')
+await new Promise((resolve) => setTimeout(resolve, 3400))
 assert.equal(popover(c).hidden, false, 'and it stays up past the popover timeout')
-assert.equal(note(c).textContent, '正在重启…', 'still saying what is happening')
-console.log('C restart accepted: popover says', note(c).textContent, '| window closed =', c.windowStub.closed, '| popover still open =', !popover(c).hidden)
+console.log('C restart accepted: window closed =', c.windowStub.closed, '| after the watchdog:', note(c).textContent)
 
-// --- case D: no caption band (full screen), and disposal --------------------
+// --- case D: a restart that is already in flight ----------------------------
 
-const d = boot(serveState, { overlayVisible: false })
-assert.equal(chromeButton(d), undefined, 'a window whose overlay reports no visible band gets no button')
-console.log('D full screen: nothing mounted')
+const d = boot(async (url) => (
+  String(url).endsWith('/restart')
+    ? { ok: true, json: async () => ({ ok: false, code: 'busy' }) }
+    : { ok: true, json: async () => ({ restart: { available: true } }) }
+))
+chromeButton(d).dispatch('click')
+await flush()
+goButton(d).dispatch('click')
+await flush()
+assert.equal(note(d).textContent, '已经在重启了，请稍候…', 'a second click in the same window is told, not silently dropped')
+assert.equal(goButton(d).disabled, false, 'and the button is usable again')
+console.log('D busy case:', note(d).textContent)
+
+// --- case E: keyboard ---------------------------------------------------------
 
 const e = boot(serveState)
-const button = chromeButton(e)
-const panel = popover(e)
-assert.equal(e.disposers.length, 1, 'apply registers one effect')
-for (const dispose of e.disposers) dispose()
+chromeButton(e).dispatch('click')
+await flush()
+assert.equal(popover(e).hidden, false, 'the popover is open for the keyboard case')
+e.document.dispatch('keydown', { key: 'Enter', target: { tagName: 'INPUT' } })
+await flush()
+assert.equal(popover(e).hidden, false, 'Enter while typing in a prompt never restarts the app')
+assert.equal(requests.filter((entry) => entry.method === 'POST').length, 0, 'nothing was requested')
+
+const posted = []
+const f = boot(async (url, init) => {
+  if (String(url).endsWith('/restart')) {
+    posted.push(init?.method)
+    return { ok: true, json: async () => ({ ok: true, mode: 'relaunch' }) }
+  }
+  return { ok: true, json: async () => ({ restart: { available: true } }) }
+})
+chromeButton(f).dispatch('click')
+await flush()
+f.document.dispatch('keydown', { key: 'Enter', target: { tagName: 'BUTTON' } })
+await flush()
+assert.deepEqual(posted, ['POST'], 'Enter in the popover confirms the restart')
+console.log('E keyboard: Enter confirms, and is ignored while typing')
+
+// --- case F: no caption band (full screen), and disposal --------------------
+
+const g = boot(serveState, { overlayVisible: false })
+assert.equal(chromeButton(g), undefined, 'a window whose overlay reports no visible band gets no button')
+console.log('F full screen: nothing mounted')
+
+const h = boot(serveState)
+const button = chromeButton(h)
+const panel = popover(h)
+assert.equal(h.disposers.length, 1, 'apply registers one effect')
+for (const dispose of h.disposers) dispose()
 assert.equal(button.isConnected, false, 'disposal removes the button')
 assert.equal(panel.isConnected, false, 'disposal removes the popover')
-console.log('E dispose: chrome removed')
+console.log('G dispose: chrome removed')
 
-console.log('\nRESULT: dsh-plugin-restart browser half mounts in the caption band, confirms before restarting, and never closes its window')
+console.log('\nRESULT: dsh-plugin-restart browser half mounts in the caption band, confirms before restarting,')
+console.log('        reports a restart that is already running or did not take effect, and never closes its window')
 process.exit(0)

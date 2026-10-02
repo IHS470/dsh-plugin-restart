@@ -24,6 +24,12 @@ window.__ModuleLoader__.load({
     const STYLE_ID = 'dsh-plugin-restart-style'
     /** How long the confirm popover stays open by itself. */
     const POPOVER_MS = 8000
+    /**
+     * How long to wait for the app to actually go away before admitting it did not. The window is
+     * torn down with the old process, so a page that is still here after this long was never
+     * restarted — and saying so beats a notice that spins forever.
+     */
+    const STALL_MS = 5000
 
     const zh = {
       title: '重启 DeepSeek Harness',
@@ -31,6 +37,8 @@ window.__ModuleLoader__.load({
       go: '重启',
       cancel: '取消',
       pending: '正在重启…',
+      busy: '已经在重启了，请稍候…',
+      stalled: '重启似乎没有生效，请再试一次或手动重启',
       unavailable: '重启能力还没加载：请先重启一次应用',
       failed: '重启失败，请手动重启',
     }
@@ -41,6 +49,8 @@ window.__ModuleLoader__.load({
       go: 'Restart',
       cancel: 'Cancel',
       pending: 'Restarting…',
+      busy: 'A restart is already in progress…',
+      stalled: 'The restart did not take effect — try again or restart manually',
       unavailable: 'Restart is not loaded yet: restart the app once',
       failed: 'Restart failed — restart manually',
     }
@@ -173,6 +183,7 @@ window.__ModuleLoader__.load({
       let busy = false
       let ready
       let closeTimer
+      let stallTimer
 
       function paint() {
         const text = copy()
@@ -248,6 +259,7 @@ window.__ModuleLoader__.load({
         // The app is on its way out: the confirmation must not time out under the user, because
         // this line is the only thing saying the click was heard.
         clearTimeout(closeTimer)
+        clearTimeout(stallTimer)
         say(copy().pending)
         paint()
         try {
@@ -260,11 +272,19 @@ window.__ModuleLoader__.load({
             // single-instance lock anyway, which belongs to the process, not the window. The Host
             // exits by itself, the detached helper starts the app again, and this window disappears
             // with the old process.
+            //
+            // If that does not happen, this page is still here to say so.
+            stallTimer = setTimeout(() => {
+              busy = false
+              say(copy().stalled)
+              paint()
+            }, STALL_MS)
             return
           }
           busy = false
           if (result && result.code === 'unavailable') ready = false
-          say(result && result.code === 'unavailable' ? copy().unavailable : copy().failed)
+          if (result && result.code === 'busy') say(copy().busy)
+          else say(result && result.code === 'unavailable' ? copy().unavailable : copy().failed)
           paint()
         } catch (error) {
           busy = false
@@ -288,8 +308,18 @@ window.__ModuleLoader__.load({
         close()
       }
 
+      /** Escape closes; Enter confirms, but only from the popover — never while typing a prompt. */
       function onKey(event) {
-        if (event.key === 'Escape') close()
+        if (!open) return
+        if (event.key === 'Escape') {
+          close()
+          return
+        }
+        if (event.key !== 'Enter') return
+        const target = event.target
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+        event.preventDefault?.()
+        onGo()
       }
 
       function onOutside(event) {
@@ -315,6 +345,7 @@ window.__ModuleLoader__.load({
 
       return () => {
         clearTimeout(closeTimer)
+        clearTimeout(stallTimer)
         button.removeEventListener('click', onButton)
         go.removeEventListener('click', onGo)
         cancel.removeEventListener('click', onCancel)
