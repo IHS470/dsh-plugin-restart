@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-10-02
+
+### Fixed
+
+**A restart could end with the app hidden in the tray.** The helper called a restart successful once the
+app's host answered on its web port — and that is not the same thing as a window on screen. When the desktop
+shell's own boot fails it hides the window in the tray and writes a `-web-boot` crash report, so the user
+sees exactly "it closed and never came back" while `last-run.json` says `ok=true`. The report that led
+here:
+
+```
+source: web-boot   phase: startup   shell pid: 41700
+Error: Error invoking remote method 'dsh-desktop:boot': Error: Desktop Host is unavailable
+```
+
+### Changed
+
+- **The window is now checked, not assumed.** Once the app is up, the helper asks whether the shell it
+  started owns a visible window, and only then decides. A missing window is raised (the shell answers a
+  second launch by showing and focusing its own window), and the result is reported:
+  `last-run.json` gained `window: visible | raised | hidden`, and `relaunch.log` records both checks.
+  The good case costs one process query; the bad case costs one app start and gets the window back.
+- `DSH_RESTART_RAISE` now defaults to `auto` (raise only when the window is missing). `1` raises
+  unconditionally, `0` skips the check and the raise entirely and just reports.
+
+[0.4.2]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v0.4.2
+
 ## [0.4.1] - 2026-10-02
 
 ### Fixed
