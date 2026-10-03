@@ -1,171 +1,30 @@
-# dsh-plugin-restart
+﻿# dsh-plugin-restart 2.0.0
 
-[English](README.en.md) | 中文
+DeepSeek Harness 桌面应用的重启按钮：**窗口标题栏一个按钮**，点一下就把整个应用关掉再拉起来。2.0.0 的运行时**就是最初的 v0.1.0**（逐字节一致），仓库里另外附带一个工具，把**「重启 DeepSeek Harness」放进托盘的右键菜单**。
 
-[![npm](https://img.shields.io/npm/v/dsh-plugin-restart)](https://www.npmjs.com/package/dsh-plugin-restart)
-[![test](https://github.com/IHS470/dsh-plugin-restart/actions/workflows/ci.yml/badge.svg)](https://github.com/IHS470/dsh-plugin-restart/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/dsh-plugin-restart)](LICENSE)
+## 两件东西，一次下载都有
 
-**装在 DeepSeek Harness 桌面版窗口标题栏里的重启按钮。** 点一下、确认一下，应用自己关掉再起来，
-窗口直接出现在最前面——不会缩进托盘，也不会弹「应用无法启动或已意外停止」。
-
-- **一个按钮**：挂在标题栏里、原生"最小化"左边，位置由 caption overlay 的矩形实时算出，
-  任何 DPI 下都贴着原生按钮而不重叠；全屏时那条带子消失，按钮跟着消失。
-- **二次确认是一个可见的浮层**，不是"按钮变红再点一次"——它紧挨着关闭按钮，而"没反应"是这里最坏的反馈。
-- **重启即前台**：应用起来后助手会再戳一次，桌面壳对"第二次启动"的回应是聚焦自己的窗口。
-- **零依赖、零配置、零磁盘状态**（除了助手日志），不需要任何 DSH 版本特有的设置命名空间。
-
-## 安装
-
-```sh
-dsh plugin --profile desktop add dsh-plugin-restart
-```
-
-（`desktop` 是桌面版 profile 的名字；终端里用 `dsh web` 起的话换成 `--profile web`。）
-
-然后**重启一次 DeepSeek Harness**（让 bundle 进入组合树），刷新页面即可在标题栏看到按钮。
-
-> 标题栏那条带子只有一个位置：如果已经有别的插件也往这里放按钮，两个会正好叠在一起。
-
-**要求**：Windows + DeepSeek Harness 桌面版（Electron 壳）。其它平台可以安装，但按钮会明确报告
-"重启能力还没加载"——助手的整套动作依赖 `taskkill` 与 Windows 的单实例行为，在这些平台上没有等价
-实现，而**关掉一个自己拉不回来的壳比不提供按钮更糟**。同样的判断也用在"应用本身不在"的时候：可执行
-文件被移走、卸载，或者指向的根本不是可执行镜像时，能力直接报 `app-unusable`，那一下不会关掉你的应用。
-
-## 它是怎么做到的
-
-DSH 桌面壳把 Host 跑成**普通 Node 子进程**（`dsh-desktop-host`），所以插件里 `require('electron')`
-拿不到 `app`、没有 `relaunch()`；而桌面壳持有**单实例锁**，直接再启动一个只会聚焦旧窗口。
-所以重启由这些事组成，每一件都是被实际行为逼出来的：
-
-1. **先关桌面壳，再让 Host 退出。** 桌面壳把 Host 的**任何**退出都判成崩溃——连干净的
-   `process.exit(0)` 也一样——然后弹「应用无法启动或已意外停止」并把 Host 的 stderr 尾巴贴上去，
-   每次重启多一份崩溃报告。反过来先关壳，壳就什么都来不及看见。Host 配合这一点：它不再定时自杀，
-   而是**轮询桌面壳的 pid**，等它消失后才退出（4 秒兜底：助手没起来时仍然退出，让壳自己的恢复框
-   至少提供重启）。
-2. **关壳按 pid，绝不用 `/T`。** 助手本身是 `shell → host → 助手` 的孙进程，树杀会在重启前先把自己
-   杀掉；1.2 秒还没走就补一次，并确认 `alive=false` 而不是假定。
-3. **上一代必须走干净，下一代才准启动。** 被强杀的 Electron 壳可能留下短暂的子进程（渲染器、GPU 辅助、
-   还没退的 Host）。它们占着 profile，而"启动进一个还被占着的 profile"正是**重启后进程在、窗口不来**
-   的经典原因。所以壳死后会先把所有跑这个可执行文件镜像的进程算清楚，等一小段（最多 5 秒），
-   还没走的按 pid 关掉（`straysClosed` 会记下来）。**这份清点按「创建时间」认人，不按 pid——这一点是被 0.4.0 血的教训逼出来的：pid 会在旧一代刚死时立刻被回收，而拿到它的第一个进程往往就是刚启动的新应用，于是助手把自己刚开的窗口杀了。** **这份清点不挡启动**：它在关壳前就开始枚举、在**应用启动之后**才读取结果——枚举出来的 pid 都是启动之前就存在的，所以活到那时的绝不可能是刚启动的应用。0.2.0 把它串在关壳之后、0.3.x 串在启动之前，都白花了那几百毫秒。
-4. **壳一消失就启动应用，不等旧 Host。** 旧 Host 在壳死后约 0.1 秒自己就走，而新应用要好几秒才轮到
-   自己的 Host 去占端口——所以"先等 Host 退出、再睡 400 毫秒等单实例锁"纯粹是加在用户身上的串行等待。
-   现在是：一键下去**同时**开始清点上一代 → 关壳（用 `process.kill` 直接终止，不再启动 `taskkill.exe`，
-   省掉约 0.1 秒）→ 清点结果到手就启动应用 → 再去确认旧 Host 已退出（与新应用自己的启动并行）。
-   **实测：从点击到应用被拉起约 0.3 秒**（0.1.1 是 0.32 秒，0.2.0 因为把清点串进来变成 ~0.65 秒）。
-   应用自身的启动时间不变——它答话要约 2.5 秒，窗口更晚，**这段地板属于应用，不属于这个插件**。
-5. **直接启动可执行文件，并校验这次启动真的成立。** 直接 spawn 让助手拿到应用的 pid，于是能分辨
-   "真的起来了"和"输了单实例竞争、秒退"——后者会被检测到（连同退出码）并重试，最多三次。
-6. **启动前必须删掉 `ELECTRON_RUN_AS_NODE`。** 桌面壳就是靠它把 Host 跑成普通 Node 的，助手的
-   环境里因此带着它；原样传给应用，Electron 会以"跑 Node"的方式启动：不开窗口、立刻退出，
-   用户看到的就是「应用直接关掉了，没有重启」。
-7. **抬窗默认关掉了（`DSH_RESTART_RAISE=1` 打开）。** 它每次都要起一整个 Electron，而且正好落在应用自己的界面还在加载的时候——那是花 CPU 最差的时刻，何况刚启动的应用本来就会自己显示窗口。 桌面壳对"第二次启动"的回应是聚焦自己的窗口
-   （`second-instance`），这是插件对窗口可见性唯一的抓手；但它每次都要起一整个 Electron，所以只戳一次，
-   而且是**答话后 4 秒**、落在下面那个 settle 窗口之内（`DSH_RESTART_POKE_MS` 可改）——戳在应用刚起来的时候等于和它的启动抢 CPU，
-   那正是 0.1.x 三次戳（2/6/12 秒）干的事。戳完要是不退，而助手启动的那个应用还活着，就把它关掉，
-   不留第二个实例。
-8. **锁一直握到应用真的站稳。** 应用答话之后锁再握 6 秒（`DSH_RESTART_SETTLE_MS` 可改）：于是
-   "刚重启完马上又点一次"得到的是一个**明确的等待提示**（Host 回 `{ok:false, code:'settling',
-   retryInMs}`，按钮上写着还剩几秒），而不是把还在启动的应用杀掉——**两次重启挨太近，卡住的多半就是
-   这个原因**。锁里带着自己的 `settleUntil`，所以就算助手没能来释放它，时间一到它自己就失效。
-9. **有一个独立见证者。** Host 在启动助手**之前**先起 `lib/guardian.mjs`，它比助手和 Host 都活得久：
-   如果 25 秒内应用还没在 web 端口上答话（助手死了、机器睡了、三次启动全输了锁竞争），见证者就
-   **把应用拉起来**，最多试三次。它**只清一个已经没人管的锁**：锁的主人还活着就不动——否则下一次点击会
-   起第二个助手，两个助手各自关壳、各自启动应用，正是把机器搞卡的路子。它刻意写得很笨——不存任何状态，
-   任何失败都只留一行日志——因为它就是"别的都坏了"之后跑的那段代码。宽限可用
-   `DSH_RESTART_GUARDIAN_GRACE_MS` 调。
-
-另外：页面上**不会**用 `window.close()` 收尾——桌面壳把窗口关闭事件改成**隐藏到托盘并继续运行**，
-而且单实例锁属于进程而不是窗口，关窗口什么也释放不了。所以窗口留着显示「正在重启…」，由进程退出
-把它一起带走；如果 5 秒后这个页面还在，它会直接说「重启似乎没有生效」，而不是一直转。
-
-顺手也把下面这些做进去了：一次只允许一个重启（Host 持锁，第二次点击回 `busy`；**进入"应用还在站稳"
-阶段的锁回 `settling` 并带上还剩多少毫秒**；陈旧锁和过了 `settleUntil` 的锁都会自动清掉）、
-`GET /dsh-restart/state` 报出插件版本 / 是否正在重启 / **处在哪一阶段（`stage`）** / 上一次的结果、
-助手参数改成具名（`--host=` /
-`--web=` / `--lock=`，同时仍接受旧的位置参数——助手的文件是启动时现读的，所以升级后的第一次重启真的
-是"旧 Host + 新助手"）。
-
-## 设置
-
-应用**设置页**里的「重启」一节（`settings.section`，写法与 `dsh-voice-live` 相同）。改一项立刻生效，宿主回的是**校验后的完整设置**——页面上显示的永远是真的会被执行的东西。React 是**可选加载**的：拿不到就不注册这一节，标题栏按钮照旧——**设置页永远不该拖垮重启本身**。
-
-| 设置 | 选项 | 说明 |
+| | 是什么 | 怎么用 |
 |---|---|---|
-| **退出方式** | **正常退出（默认）** / 强制退出 | 正常退出：先让 Host 干净退出 → 关壳 → 给**整代进程最多 10 秒**自己走；赖着不走的才补杀，并在 `last-run.json` 记 **`escalated: true`**（"我本来想好好退"这件事不藏着）。强制退出：一次性关掉整棵树。 |
-| **按钮位置** | 标题栏右侧 / 标题栏左侧 / **只在设置里** | 三种都真接线在标题栏定位逻辑里，不是只存起来；选"只在设置里"会**卸载**标题栏按钮。 |
-| **按钮偏移** | 像素（正负自由） | 两侧都可用：正数远离窗口角落，负数靠近。左侧复用同一套 `right`，样式表无需改动。 |
-| **窗口核验** | 自动（缺窗口才抬）/ 每次都抬 / 只报告 | 0.4.2 的能力变成可选项；"只报告"不动手，只把 `window` 如实写下来。 |
-| **稳定等待** | 秒（默认 6） | 应用起来后锁握多久，防止紧接着的第二次重启把它杀在启动中。 |
-| **立即重启** | 按钮 | 不用回标题栏，设置页里直接重启。 |
+| **插件（运行时）** | 标题栏按钮：杀壳 → 拉起应用 → 抬窗两次。没有设置页、没有锁——想连点就连点 | 作为 DSH 插件安装即可 |
+| **`tools/patch-shell-tray.mjs`** | 给壳的托盘菜单加一项「重启 DeepSeek Harness」，走壳自己的 `app.relaunch()` + `quitWithoutConfirmation()`（**托盘图标由 Electron 自己移除**，不留幽灵图标） | 见下 |
 
-设置存在 `$DSH_HOME/dsh-plugin-restart/settings.json`，通过 `GET`/`POST /dsh-restart/settings` 读写；所有值在 `lib/settings.mjs` 里一处校验，认不出的值退回原值——拼错一个词不该让重启失灵。
+**为什么托盘那一项不能由插件提供**：托盘在桌面壳的主进程里（`new Tray` / `setContextMenu`）。插件只有两个落脚点——宿主机（纯 Node，没有 Electron API）和页面（preload 只暴露固定的 `dshDesktop`）——都无法向托盘菜单添加任何一项。所以它是一个**本地、可回退**的壳补丁工具，长期解法见 `docs/dsh-restart-api-request.zh.md`（精确到行号）。
 
-**一句必须说清的边界**：这个壳**没有给插件留退出/重启接口**。它自己的优雅退出是托盘菜单里的 "Restart App and Host"（`lib/main.js`：`restartAppHostMenu`、`quitWithoutConfirmation()` → `app.quit()`），而 `background-close-confirmed` 标记的含义**正好相反**——它让"关闭窗口"被**静默地**变成"藏进托盘"。所以这里的"正常退出"是**插件能驱动的最有序路径**，不是壳自己的 `app.quit()`；被硬杀的应用也可能在 Windows 通知区留下幽灵图标，直到鼠标划过。要 100% 的优雅退出，需要 DSH 暴露一个通道——具体改法与行号见 [`docs/dsh-restart-api-request.zh.md`](docs/dsh-restart-api-request.zh.md)（中文，可直接转给 DSH；英文版是 [`docs/dsh-restart-api-request.md`](docs/dsh-restart-api-request.md)）。
-
-## 诊断
-
-都在 `$DSH_HOME/dsh-plugin-restart/`：
-
-| 文件 | 内容 |
-|---|---|
-| `relaunch.log` | 每一步的时间戳；`done ok=… attempts=… pokes=… straysClosed=… shellGone=…ms clean=…ms appStarted=…ms total=…ms` 是总账（`clean` 是清点上一代花的时间，通常因为与关壳并行而接近 0） |
-| `guardian.log` | 见证者的判断过程：壳什么时候消失、什么时候认定"应用没回来"、它拉了应用几次、有没有清掉别人的锁（**以及有没有因为主人还活着而放过一把锁**） |
-| `app.log` | **应用自己**的 stdout/stderr，每次启动重写（一次启动一份）。0.1.0 的"应用没回来"如果当时有这个文件，一眼就能看出原因 |
-| `last-run.json` | 机器可读的摘要：`ok` / `answered` / `attempts` / `pokes` / `straysClosed` / `appExit` / `ms`，`/dsh-restart/state` 的 `last` 就是它 |
-| `relaunch.lock` | 重启进行中的锁：带 `stage` 和 `settleUntil`，助手完成时删除；过了 `settleUntil` 或超过 3 分钟都视为陈旧并自动清理（见证者只清已经没人管的那种） |
-
-## 安全
-
-- 所有路由都过 DSH 的同源信任栅栏：跨站标记、异源 `Origin`、非 loopback 的 `Host` 一律 403，
-  存在 Host 自己的 `connection` 守卫时以它为准。重启接口只接受 `POST`。
-- 交给助手的 web 地址取自**浏览器刚发出的那次请求的 `Host` 头**，并且只接受 loopback——
-  伪造的 `Host` 不能把助手指向别的机器。
-- 除了 `$DSH_HOME/dsh-plugin-restart/` 下那几个诊断文件（日志、`last-run.json`、进行中的锁），插件
-  **不写任何文件、不上报任何数据**；没有网络请求。
-- 它只会做一件事：重启本机的这个应用。
-
-## 验证
-
-**四个 harness**，全部用真实代码跑，`npm test` 一次跑完（`test/relaunch.test.mjs` 与
-`test/guardian.test.mjs` 只在 Windows 上真跑，其它平台打印 SKIP 并以 0 退出）：
-
-| 检查 | 脚本 | 覆盖 |
-|---|---|---|
-| 宿主半边 | `test/host.test.mjs` | 能力探测（纯 Node host 下 `available === false` 且说明原因）、`POST /restart` 回 `unavailable` 并带上原因、`/state` 报出插件版本 / `busy` / `last`、**一把锁只放一个重启进来**（新鲜锁 → `busy: true` 且 `POST` 回 `{ok:false,code:'busy'}`；10 分钟前的陈旧锁不算数）、信任栅栏四种拒绝路径 + 同源放行、Host 守卫的否决与放行、未知路径与 `GET /restart` 都是 404 |
-| 浏览器半边 | `test/client.test.mjs` | 桩掉 DOM/fetch 后加载 `client.js`：按钮挂进窗口 chrome、`--dsh-restart-right` 由 caption overlay 矩形算出（桩：1280 宽 → 142px）、高度跟随 `--dsh-windows-titlebar-height`、点一下**弹出可见浮层**、取消不发请求、确认后**只发一次** POST 并显示「正在重启…」、**绝不 `window.close()`**、5 秒后仍没生效就改口「重启似乎没有生效」而不是一直转、提示活过浮层的 8 秒自动关闭计时器、`busy` 回执有专门文案、**Enter 确认但在输入框里不确认**、overlay 报告不可见时不挂载、dispose 后 chrome 被移除 |
-| 见证者 | `test/guardian.test.mjs` | 跑真实 `lib/guardian.mjs`：**没人应答时**它自己把应用拉起来、并清掉一个已死助手留下的锁（并断言交给应用的 env 里没有 `ELECTRON_RUN_AS_NODE`）；**已有应用在应答时**它一步都不动、什么都不启动；**锁的主人还活着时**它照样拉起应用，但**绝不动那把锁**（否则下一次点击会起第二个助手） |
-| 重启助手 | `test/relaunch.test.mjs` | 用桩跑真实 `lib/relaunch.mjs`（把 Node 可执行文件**复制**成一个独立镜像名 + `NODE_OPTIONS` 注入探针冒充应用——因为助手会按镜像名清点进程、一次性进程冒充桌面壳与 Host、401 桩端口冒充 web 端口），**七种情形**：Host 自己退出 / Host 赖着不走 / 没拿到 web 地址 / 旧宿主的位置参数形式 / 可执行文件不存在 / 应用路径是脚本 / 第一次启动输了单实例竞争 / **上一代的残留进程活过了壳**。断言：壳先关且确认 `alive=false`、**残留进程在应用启动之前被按 pid 关掉**（`straysClosed`）、**应用在旧 Host 被确认消失之前就已经启动**（0.1.1 提速的地方）、**`ELECTRON_RUN_AS_NODE` 绝不到达应用**、**启动不了的路径一律不关壳**、输锁竞争的启动带着退出码重试、只戳一次窗、应用输出被 `app.log` 收下、`last-run.json` 与日志一致、锁一定被释放、**从不使用 `taskkill /T`** |
-
-```sh
-npm test
-```
-
-## 许可
-
-MIT © 2026 IHS470 · 详见 [LICENSE](LICENSE)
-
-## 托盘菜单里的「重启」（可选：本地补丁工具）
-
-桌面壳的托盘右键菜单原本只有「打开 DeepSeek Harness」和「退出 DeepSeek Harness」。**托盘在壳的主进程里，插件碰不到它**
-（宿主机是纯 Node、没有 Electron API；页面只拿到固定的 `dshDesktop` 表面），所以这一项只能改壳。仓库里带了工具，
-给壳的 `app.asar` 里的 `lib/main.js` 打补丁：在「退出」上面插入一项 **「重启 DeepSeek Harness」**（与另外两项同一命名模式，
-跟随语言），点击走壳自己的 `app.relaunch()` + `quitWithoutConfirmation()`——**Electron 会自己移除托盘图标，不留幽灵图标**。
+## 托盘工具
 
 ```bash
-**独立仓库**：[`IHS470/dsh-desktop-tray-restart`](https://github.com/IHS470/dsh-desktop-tray-restart) —— 同一工具，**自动探测安装位置**（不再假设某台机器的路径）。
-
-```bash
-node tools/patch-shell-tray.mjs status   # 当前 app.asar 是否带这块补丁
-node tools/patch-shell-tray.mjs build    # 生成 app.asar.new，并逐文件校验（本机实测 11470 个文件零差异）
-node tools/patch-shell-tray.mjs detach   # 45 秒后由 WMI 创建的独立进程执行切换：关应用 → 换文件 → 重启 → 验证窗口
-node tools/patch-shell-tray.mjs swap     # 立即切换（应用会被关闭；若本进程在应用进程树内会一起被杀，故推荐 detach）
-node tools/patch-shell-tray.mjs revert   # 还原原始 app.asar 并重启
+node tools/patch-shell-tray.mjs status   # 已安装的 asar 是否带这块补丁
+node tools/patch-shell-tray.mjs build    # 从原始备份生成暂存包并逐文件校验
+node tools/patch-shell-tray.mjs detach   # 45 秒后由 WMI 创建的独立进程完成切换（推荐）
+node tools/patch-shell-tray.mjs swap     # 立即切换
+node tools/patch-shell-tray.mjs revert   # 还原原始 asar 并重启
 ```
 
-三点如实说明：
+自动探测安装位置（`--install=` / `--asar=` → 运行中进程的路径 → 默认位置）；原文件备份为 `app.asar.orig`；若新包起不来，40 秒内**自动还原并重启**。这是对**厂商打包应用**的本地补丁，**应用更新或重装会覆盖 `app.asar`**，重跑 `build` + `detach` 即可。
 
-- 这是对**厂商打包应用**的本地补丁，不是插件功能；**应用更新或重装会覆盖 `app.asar`**，届时重跑 `build` + `detach` 即可。
-- 切换前原文件会备份为 `app.asar.orig`；若新包起不来，切换进程会在 40 秒内**自动还原并重启**（它由 WMI 创建，不随应用一起被杀）。
-- 长期解法是让壳自己带上这一项：见 [`docs/dsh-restart-api-request.zh.md`](docs/dsh-restart-api-request.zh.md)，里面有精确到行号的补丁。
+## 如实说明
+
+- 2.0.0 **不含** 1.0.x 那条线的东西（设置页、重启方式二选一、见证者、残留清理、稳定锁）——按需求回退到 v0.1.0 的行为；那些版本仍保留在各自 tag（`v1.0.0`–`v1.0.4`）。
+- 标题栏按钮是**杀进程**式重启，**可能留下幽灵托盘图标**（Windows 对被强杀进程的行为）；托盘那一项不会。
+- 只在 Windows 上验证过。
