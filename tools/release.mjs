@@ -174,8 +174,11 @@ async function publish() {
     method: 'POST',
     body: JSON.stringify({ base_tree: head.tree.sha, tree: entries }),
   })
-  const firstLine = notes.split('\n').find((line) => line.trim() !== '') ?? tag
-  const message = arg('message') ?? `${tag}: ${firstLine.replace(/^#+\s*/, '')}`
+  // The tag is the title; the changelog section is the body. Deriving a title from a markdown heading produced
+  // things like "[2.0.1] - 2026-10-03", which is not a name anyone wants in a list of releases.
+  const title = tag
+  const body = notes.split('\n').slice(1).join('\n').trim()
+  const message = arg('message') ?? `${tag}: ${notes.split('\n')[0].replace(/^#+\s*/, '').trim()}`
   const commit = await api(`/repos/${REPO}/git/commits`, {
     method: 'POST',
     body: JSON.stringify({ message, tree: tree.sha, parents: [ref.object.sha] }),
@@ -184,7 +187,15 @@ async function publish() {
   process.stdout.write(`commit ${commit.sha.slice(0, 8)} on ${BRANCH}\n`)
 
   await api(`/repos/${REPO}/git/refs`, { method: 'POST', body: JSON.stringify({ ref: `refs/tags/${tag}`, sha: commit.sha }) })
-  process.stdout.write(`tag ${tag} -> ${commit.sha.slice(0, 8)} (the release workflow will publish the notes)\n`)
+  process.stdout.write(`tag ${tag} -> ${commit.sha.slice(0, 8)}\n`)
+
+  // The release workflow does not read the changelog, so the notes are published here. Creating the release
+  // before the workflow reacts is what keeps its own placeholder body from becoming the public notes.
+  const release = await api(`/repos/${REPO}/releases`, {
+    method: 'POST',
+    body: JSON.stringify({ tag_name: tag, name: title, body, draft: false, prerelease: false }),
+  })
+  process.stdout.write(`release ${release.html_url}\n`)
 
   const profile = arg('install')
   if (profile !== undefined) install(profile, version)

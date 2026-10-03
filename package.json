@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-restart",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Restart button for the DeepSeek Harness desktop app — the original v0.1.0 behaviour, plus the tool that puts a Restart item in the shell tray menu.",
   "type": "module",
   "license": "MIT",

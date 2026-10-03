@@ -1,5 +1,19 @@
 ﻿# Changelog
 
+## [2.0.2] - 2026-10-03
+
+### Fixed
+
+- **The release tool derived a release title from a markdown heading**, which produced names like
+  `[2.0.1] - 2026-10-03`. The title is now the tag itself and the changelog section is the body — and because the
+  release workflow does not read the changelog, the tool publishes the release itself instead of leaving the notes to
+  a placeholder (the tool used to claim the workflow would do it, which was simply wrong).
+- **One assertion in the relaunch harness was stronger than the runtime it tests.** It required the helper's log to
+  contain `host exited after …` or `host: closing pid`, but v0.1.0's helper only writes that line when it catches the
+  host leaving in the act — a race that failed on one platform out of six while the behaviour was correct (the host
+  being gone is asserted separately, as is an overstaying host being closed). The assertion is gone; the runtime is
+  untouched, still byte for byte the v0.1.0 code.
+
 ## [2.0.1] - 2026-10-03
 
 ### Fixed
