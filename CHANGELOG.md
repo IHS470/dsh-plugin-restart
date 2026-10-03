@@ -1,4 +1,14 @@
-﻿# Changelog
+# Changelog
+
+## [2.0.3] - 2026-10-03
+
+### Changed
+
+- **`tools/release.mjs` is the general version now.** The directory it publishes can be given with `--root=`, and the
+  repository is read from `package.json`'s `repository` field instead of being hardcoded to this one. It is the same
+  tool the sibling repository `dsh-global-rules` publishes with, so a fix to the pipeline no longer has to be copied by
+  hand between repositories.
+- No runtime change: the plugin is still the v0.1.0 code, byte for byte.
 
 ## [2.0.2] - 2026-10-03
 

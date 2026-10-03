@@ -33,11 +33,20 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { execSync } from 'node:child_process'
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..')
+const TOOL_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))
+const ROOT = path.resolve(process.argv.find((value) => value.startsWith('--root='))?.slice(7) ?? path.join(TOOL_DIR, '..'))
 const arg = (name) => process.argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3)
 const flag = (name) => process.argv.includes(`--${name}`)
 
-const REPO = arg('repo') ?? 'IHS470/dsh-plugin-restart'
+/** owner/name, from --repo or from this package.json's repository field. */
+const REPO = arg('repo') ?? (() => {
+  try {
+    const url = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).repository?.url ?? ''
+    const match = url.match(/github\.com[/:]([^/]+\/[^/.]+)/)
+    if (match !== null) return match[1]
+  } catch {}
+  throw new Error('pass --repo=<owner/name>: no repository could be read from package.json')
+})()
 const BRANCH = arg('branch') ?? 'main'
 const TOKEN = process.env.GITHUB_TOKEN ?? readToken(arg('token-file') ?? path.join(process.env.USERPROFILE ?? '.', '.dsh', 'gh-token.txt'))
 const IGNORED = new Set(['.git', 'node_modules', '.DS_Store'])
