@@ -1,5 +1,21 @@
 ﻿# Changelog
 
+## [2.0.1] - 2026-10-03
+
+### Fixed
+
+- **The release pipeline lived outside the repository and only ever added files.** It built each commit on top of the
+  branch's existing tree (`base_tree`), so a file deleted locally stayed in the repository: the first `v2.0.0` tag
+  carried four files from the 1.0.x line (`lib/guardian.mjs`, `lib/proc.mjs`, `lib/settings.mjs`,
+  `test/guardian.test.mjs`) that this line does not contain, while claiming to be the v0.1.0 runtime byte for byte.
+  The pipeline is now `tools/release.mjs`, inside the repository, and it **mirrors the working tree**: a path that is
+  gone locally is deleted in the commit, and every file is addressed by its git blob hash so that "changed" means
+  changed bytes.
+- It refuses to publish when the changelog has no section for the version, when the tag already exists, or when the
+  tests are red, and it can be asked what it would do first: `node tools/release.mjs --dry-run`, plus
+  `node tools/release.mjs --selftest`, which tests the deletion case that went wrong.
+- No runtime change: the plugin is still the v0.1.0 code, byte for byte.
+
 ## [2.0.0] - 2026-10-03
 
 2.0.0 is a deliberate **re-base, not an increment**. The runtime is the original **v0.1.0** code — restored because
