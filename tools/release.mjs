@@ -247,6 +247,8 @@ function selftest() {
 try {
   if (flag('selftest')) selftest()
   else await publish()
+  // Node's fetch keeps idle sockets open, which would leave the process alive after a successful publish.
+  process.exit(0)
 } catch (error) {
   process.stdout.write(`FAILED: ${error.message}\n`)
   process.exit(1)
