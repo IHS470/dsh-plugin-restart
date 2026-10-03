@@ -192,6 +192,9 @@ pattern as the other two entries, following the locale. It calls the shell's own
 `quitWithoutConfirmation()`, so **Electron removes the tray icon itself** and no ghost icon is left behind.
 
 ```bash
+**Standalone repository**: [`IHS470/dsh-desktop-tray-restart`](https://github.com/IHS470/dsh-desktop-tray-restart) — the same tool with the installation **detected automatically** instead of assumed.
+
+```bash
 node tools/patch-shell-tray.mjs status   # does the installed app.asar carry the patch
 node tools/patch-shell-tray.mjs build    # write app.asar.new and verify it file by file (11470 files, zero differences)
 node tools/patch-shell-tray.mjs detach   # a WMI-created process swaps in 45s: close, swap, relaunch, verify a window

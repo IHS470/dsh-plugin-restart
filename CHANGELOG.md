@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-10-03
+
+### Fixed
+
+- **The bundled tray-patch tool assumed one machine's installation path.** It now detects the installation: an
+  explicit `--install=`/`--asar=`, then the path of the running application, then the default location — and it
+  says what to pass instead of failing with a raw filesystem error when nothing is found.
+- Both READMEs point at the standalone repository, [`IHS470/dsh-desktop-tray-restart`]
+  (https://github.com/IHS470/dsh-desktop-tray-restart), which is where the tool lives on its own.
+
+[1.0.4]: https://github.com/IHS470/dsh-plugin-restart/releases/tag/v1.0.4
+
 ## [1.0.3] - 2026-10-02
 
 No runtime change: this release ships the tooling and the documentation for the tray restart item.

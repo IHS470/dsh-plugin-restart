@@ -154,6 +154,9 @@ MIT © 2026 IHS470 · 详见 [LICENSE](LICENSE)
 跟随语言），点击走壳自己的 `app.relaunch()` + `quitWithoutConfirmation()`——**Electron 会自己移除托盘图标，不留幽灵图标**。
 
 ```bash
+**独立仓库**：[`IHS470/dsh-desktop-tray-restart`](https://github.com/IHS470/dsh-desktop-tray-restart) —— 同一工具，**自动探测安装位置**（不再假设某台机器的路径）。
+
+```bash
 node tools/patch-shell-tray.mjs status   # 当前 app.asar 是否带这块补丁
 node tools/patch-shell-tray.mjs build    # 生成 app.asar.new，并逐文件校验（本机实测 11470 个文件零差异）
 node tools/patch-shell-tray.mjs detach   # 45 秒后由 WMI 创建的独立进程执行切换：关应用 → 换文件 → 重启 → 验证窗口
